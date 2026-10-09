@@ -13,16 +13,21 @@ const crs = new L.Proj.CRS(
 );
 
 const map = L.map("map", { crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZoom: 26 });
-const swisstopo = (layer) =>
-  L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.jpeg`, {
+const swisstopo = (layer, format = "jpeg", maxNativeZoom = 27) =>
+  L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.${format}`, {
     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
     maxZoom: map.getMaxZoom(), // Leaflet's default (18) would hide tiles below 50 m/px
-    maxNativeZoom: 27,
+    maxNativeZoom,
   });
 const baseLayers = {
   "Map (grey)": swisstopo("ch.swisstopo.pixelkarte-grau"),
   "Map (colour)": swisstopo("ch.swisstopo.pixelkarte-farbe"),
   "Aerial (SWISSIMAGE)": swisstopo("ch.swisstopo.swissimage"),
+  // swissALTI3D (2 m, Switzerland only) over swissALTIRegio, which also covers the surroundings.
+  "Relief (swissALTI3D)": L.layerGroup([
+    swisstopo("ch.swisstopo.swissaltiregio-reliefschattierung_multidirektional", "png", 26),
+    swisstopo("ch.swisstopo.swissalti3d-reliefschattierung", "png", 26),
+  ]),
 };
 baseLayers["Map (grey)"].addTo(map);
 L.control.layers(baseLayers, null, { position: "topleft" }).addTo(map);
