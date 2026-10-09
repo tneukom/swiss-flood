@@ -16,6 +16,7 @@ const map = L.map("map", { crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZ
 const swisstopo = (layer) =>
   L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.jpeg`, {
     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
+    maxZoom: map.getMaxZoom(), // Leaflet's default (18) would hide tiles below 50 m/px
     maxNativeZoom: 27,
   });
 const baseLayers = {
