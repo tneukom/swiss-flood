@@ -13,10 +13,18 @@ const crs = new L.Proj.CRS(
 );
 
 const map = L.map("map", { crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZoom: 26 });
-L.tileLayer("https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/2056/{z}/{x}/{y}.jpeg", {
-  attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
-  maxNativeZoom: 27,
-}).addTo(map);
+const swisstopo = (layer) =>
+  L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.jpeg`, {
+    attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
+    maxNativeZoom: 27,
+  });
+const baseLayers = {
+  "Map (grey)": swisstopo("ch.swisstopo.pixelkarte-grau"),
+  "Map (colour)": swisstopo("ch.swisstopo.pixelkarte-farbe"),
+  "Aerial (SWISSIMAGE)": swisstopo("ch.swisstopo.swissimage"),
+};
+baseLayers["Map (grey)"].addTo(map);
+L.control.layers(baseLayers, null, { position: "topleft" }).addTo(map);
 
 // ImageOverlay that displays a canvas instead of an <img>, so it can be redrawn without encoding.
 const CanvasOverlay = L.ImageOverlay.extend({
