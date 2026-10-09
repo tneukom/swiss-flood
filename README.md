@@ -1,0 +1,25 @@
+# Swiss Flood
+
+Draw dams on a map of Switzerland and see what floods.
+
+## Preprocess
+
+Turns the swisstopo DHM25 grid (`DHM25_MM_ASCII_GRID.zip`, 25 m) into a 100 m grid
+(min of each 4×4 block, rounded to 1 m, delta-encoded, zstd) in `web/data/`.
+
+    cd preprocess && cargo run --release -- ../DHM25_MM_ASCII_GRID.zip ../web/data 4
+
+The last argument is the downsampling factor (4 → 100 m, 2 → 50 m).
+
+## Run
+
+    python3 -m http.server -d web 8000
+
+Open http://localhost:8000. Dams are stored in the URL hash, so a link reproduces a scenario.
+
+## How it works
+
+Every cell bordering the outside of Switzerland is an outlet. A priority-flood with a bucket
+queue (one bucket per metre) computes the water level everywhere. The flood is run once without
+dams as a baseline (fills natural depressions); only cells where the level with dams is higher
+than the baseline are shown.
