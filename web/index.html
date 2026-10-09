@@ -27,8 +27,11 @@
     .dam .row { display: flex; align-items: center; gap: 6px; }
     .dam input { width: 70px; font: inherit; }
     .dam .info { color: #555; font-size: 12px; }
-    #stats, #cursor { font-size: 12px; color: #333; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    #stats, #lakes, #cursor { font-size: 12px; color: #333; margin-top: 6px; font-variant-numeric: tabular-nums; }
     #status { color: #a00; }
+    /* Dashes move from the overflow point towards the border. */
+    .overflow-flow { animation: overflow-flow 0.8s linear infinite; }
+    @keyframes overflow-flow { to { stroke-dashoffset: -16; } }
   </style>
 </head>
 <body>
@@ -40,6 +43,7 @@
     <div class="hint" id="drawHint">Click points on the map, double-click or Enter to finish, Esc to cancel.</div>
     <div id="dams"></div>
     <div id="stats"></div>
+    <div id="lakes"></div>
     <div id="cursor"></div>
   </div>
   <script src="flood.js"></script>
