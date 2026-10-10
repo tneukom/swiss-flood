@@ -15,6 +15,10 @@
   <style>
     /* The national colour map is busy; desaturate it so the flood overlay stands out. */
     .tiles-color { filter: saturate(0.4); }
+    /* 1px shoreline around the flooded area: four offset copies of the flood layer's shape. */
+    .leaflet-flood-pane {
+      filter: drop-shadow(1px 0 0 #0b3d91) drop-shadow(-1px 0 0 #0b3d91) drop-shadow(0 1px 0 #0b3d91) drop-shadow(0 -1px 0 #0b3d91);
+    }
     /* Dashes move from the overflow point towards the border. */
     .overflow-flow { animation: overflow-flow 0.8s linear infinite; }
     @keyframes overflow-flow { to { stroke-dashoffset: -16; } }
