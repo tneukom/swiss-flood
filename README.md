@@ -1,6 +1,6 @@
 # Swiss Flood
 
-Draw dams on a map of Switzerland and see what floods.
+Draw dams on a map of Switzerland and see what floods. Heavily AI assisted.
 
 ## Preprocess
 
