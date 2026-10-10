@@ -9,9 +9,9 @@ const zlib = require("zlib");
 const dir = process.argv[2] || path.join(__dirname, "../web/data");
 const src = fs.readFileSync(path.join(__dirname, "../web/flood.js"), "utf8");
 
-// Extract the flood section (bucket arrays + flood()) and compile it as a closure, so its
+// Extract the flood section (bucket queue + flood()) and compile it as a closure, so its
 // variables stay locals; eval at global scope would make them slow globals.
-const start = src.indexOf("const head = new Int32Array");
+const start = src.indexOf("// Priority-flood");
 const end = src.indexOf("// ----", start);
 const env = {};
 const flood = new Function("env", `"use strict"; let dem, outlets; ${src.slice(start, end)}

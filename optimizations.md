@@ -1,6 +1,6 @@
 # Optimizations
 
-Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~1.3 s in JS
+Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~1.15 s in JS
 (~0.6 s native Rust), memory is ~1 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
 `node bench.js`).
 
@@ -41,8 +41,11 @@ table: slower and much less readable); storing `level` as an offset from `terrai
 The bucket queue in web/flood.js is one FIFO linked list per metre (`head`/`tail` per bucket,
 `next` per cell). Popping a cell reads `next[i]` at a scattered position, an extra cache miss per
 cell. One growable array per bucket reads sequentially instead. In the Rust benchmark this is
-~1.5× faster (850 → 600 ms) at the same memory and with identical results. In JS: one
-`Int32Array` per bucket, doubled by hand when full (~4,600 buckets are actually used).
+~1.5× faster (850 → 600 ms) at the same memory and with identical results.
+
+Done in JS too (one growable `Int32Array` per bucket, doubled when full): identical results, but
+only ~10–15% faster (~1300 → ~1140 ms). In JS the per-step `buckets[b][k]` double lookup, the push
+helper and bounds checks weigh more, so memory access isn't the only bottleneck there.
 
 ## Web Worker
 
