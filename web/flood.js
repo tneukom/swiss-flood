@@ -40,7 +40,7 @@ const baseLayers = {
     ]),
   },
 };
-let activeLayer = "color";
+let activeLayer = "light";
 baseLayers[activeLayer].layer.addTo(map);
 
 // ImageOverlay that displays a canvas instead of an <img>, so it can be redrawn without encoding.
