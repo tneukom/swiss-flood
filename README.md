@@ -31,7 +31,8 @@ originally exported from a design tool; its API is documented at the top of
 `swissflood-ui.js`. Local changes: water level/depth in the cursor readout (`getWater`) and an
 optional `note` line on dam cards; in touch mode the drawing rubber band follows the crosshair only,
 not the mouse; Delete/Backspace deletes the selected dam; Open/Download buttons and file drop
-for dams files; an Examples menu. `web/flood.js` sets up the LV95 map and connects the UI
+for dams files; an Examples menu; a
+notice box (`setNotice`) for loading status and errors, visible on phones too. `web/flood.js` sets up the LV95 map and connects the UI
 callbacks to the WASM model.
 
 ## Dams file

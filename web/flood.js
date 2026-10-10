@@ -496,16 +496,31 @@ const ui = SwissFloodUI.mount(map, {
   formatCoord: formatLv95,
 });
 
+// Load errors are shown in the panel's notice box, which (unlike the meta line) is visible on phones.
+function loadErrorText(e) {
+  if (typeof WebAssembly !== "object") {
+    return "This site needs WebAssembly, which is turned off here (e.g. by iOS Lockdown Mode). " +
+      "To allow it for this site in Safari: tap aA in the address bar → Website Settings → turn off Lockdown Mode.";
+  }
+  // A failed allocation in Rust aborts, which surfaces as a WebAssembly.RuntimeError ("unreachable").
+  if (e instanceof RangeError || e instanceof WebAssembly.RuntimeError || /memory/i.test(e.message)) {
+    return `This device most likely doesn't have enough memory for the height map (error: ${e.message}).`;
+  }
+  return `Failed to load the height map: ${e.message}`;
+}
+
 (async () => {
-  ui.setResults({ meta: "Loading height map…" });
+  ui.setNotice("Loading height map…");
   try {
+    if (typeof WebAssembly !== "object") throw new Error("WebAssembly is not available");
     await loadDem();
     initRender();
     loadHash();
     update();
+    ui.setNotice(null);
     if (!dams.length) await openExample(EXAMPLES[0].id);
   } catch (e) {
     console.error(e);
-    ui.setResults({ meta: "Failed to load height map: " + e.message });
+    ui.setNotice(loadErrorText(e), { error: true });
   }
 })();

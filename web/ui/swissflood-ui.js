@@ -20,6 +20,7 @@
  *     formatCoord(latlng) -> string,    // e.g. LV95 "E 2 683 600  N 1 257 800" (optional)
  *   });
  *   ui.setResults({ areaKm2, volumeKm3, meta })
+ *   ui.setNotice(text | null, { error })  // status/error box in the panel, also shown on phones
  *   ui.setDams([{ id, name, crest, height, length, groundMin, groundMax, crestMin, crestMax, note }])
  *                                       // length: metres along the dam line (optional)
  *                                       // note: optional extra line on the card
@@ -74,6 +75,7 @@
           <div class="sf-stat"><div class="sf-stat-label">Flooded area</div><div class="sf-stat-value" data-ref="area">–<small>km²</small></div></div>
           <div class="sf-stat"><div class="sf-stat-label">Water added</div><div class="sf-stat-value" data-ref="volume">–<small>km³</small></div></div>
         </div>
+        <div class="sf-notice" data-ref="notice" hidden></div>
         <div class="sf-meta" data-ref="meta"></div>
         <h2 class="sf-section-title" data-ref="title">Dams</h2>
         <div class="sf-dams" data-ref="dams"></div>
@@ -358,6 +360,13 @@
         ref(panel, 'area').innerHTML = `${fmt(areaKm2, 0)}<small>km²</small>`;
         ref(panel, 'volume').innerHTML = `${fmt(volumeKm3, 2)}<small>km³</small>`;
         ref(panel, 'meta').textContent = meta || '';
+      },
+      setNotice(text, { error = false } = {}) {
+        const el = ref(panel, 'notice');
+        el.hidden = !text;
+        el.textContent = text || '';
+        el.classList.toggle('is-error', error);
+        el.setAttribute('role', error ? 'alert' : 'status');
       },
       setDams(list) {
         dams = (list || []).map((d) => ({ ...d }));

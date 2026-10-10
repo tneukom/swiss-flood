@@ -50,6 +50,12 @@ body { font-family: var(--sf-font); color: var(--sf-ink); background: #DDE3E8; }
 .sf-stat-label { font-size: 12px; font-weight: 500; color: var(--sf-water-label); }
 .sf-stat-value { font-family: var(--sf-mono); font-size: 24px; font-weight: 500; color: var(--sf-water-ink); margin-top: 2px; }
 .sf-stat-value small { font-size: 14px; margin-left: 4px; }
+.sf-notice {
+  margin: 10px 16px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4;
+  background: var(--sf-water-tint); color: var(--sf-ink);
+}
+.sf-notice[hidden] { display: none; }
+.sf-notice.is-error { background: #FEF3F2; color: #B42318; }
 .sf-meta { padding: 6px 18px 0; font-size: 12px; color: var(--sf-muted); min-height: 16px; }
 
 .sf-section-title {
