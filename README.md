@@ -72,6 +72,9 @@ The "Examples" menu loads dams files from `web/examples/` (listed in `EXAMPLES` 
 
 Open http://localhost:8000. Dams are stored in the URL hash, so a link reproduces a scenario.
 
+Pushes to `main` publish `web/` to GitHub Pages (`.github/workflows/pages.yml`; needs
+Settings → Pages → Source: GitHub Actions): https://tneukom.github.io/swiss-flood/
+
 ## How it works
 
 Every cell bordering the outside of Switzerland is an outlet. A priority-flood with a bucket
