@@ -43,15 +43,41 @@ const baseLayers = {
 let activeLayer = "light";
 baseLayers[activeLayer].layer.addTo(map);
 
-// ImageOverlay that displays a canvas instead of an <img>, so it can be redrawn without encoding.
-const CanvasOverlay = L.ImageOverlay.extend({
-  _initImage() {
-    const img = (this._image = this.options.canvas);
-    L.DomUtil.addClass(img, "leaflet-image-layer");
-    if (this._zoomAnimated) L.DomUtil.addClass(img, "leaflet-zoom-animated");
-    if (this.options.className) L.DomUtil.addClass(img, this.options.className);
-    img.onselectstart = L.Util.falseFn;
-    img.onmousemove = L.Util.falseFn;
+// Shows the off-screen overlay canvas (one pixel per grid cell) as map tiles, so it zooms and
+// pans like the base map. One huge image would be too large for the browser to animate.
+const FloodTiles = L.GridLayer.extend({
+  createTile(coords) {
+    const tile = document.createElement("canvas");
+    const size = this.getTileSize().multiplyBy(window.devicePixelRatio || 1).round();
+    tile.width = size.x;
+    tile.height = size.y;
+    this.drawTile(tile, coords);
+    return tile;
+  },
+
+  drawTile(tile, coords) {
+    const tctx = tile.getContext("2d");
+    tctx.clearRect(0, 0, tile.width, tile.height);
+    // Tile corners in LV95 metres, then in grid cells (fractional).
+    const scale = crs.scale(coords.z);
+    const tileSize = this.getTileSize();
+    const nw = crs.transformation.untransform(coords.scaleBy(tileSize), scale);
+    const se = crs.transformation.untransform(coords.add([1, 1]).scaleBy(tileSize), scale);
+    const c0 = (nw.x - dem.west) / dem.cellsize, c1 = (se.x - dem.west) / dem.cellsize;
+    const r0 = (dem.north - nw.y) / dem.cellsize, r1 = (dem.north - se.y) / dem.cellsize;
+    // Clip the source rectangle to the grid and shrink the destination to match.
+    const sc0 = Math.max(c0, 0), sc1 = Math.min(c1, dem.cols);
+    const sr0 = Math.max(r0, 0), sr1 = Math.min(r1, dem.rows);
+    if (sc1 <= sc0 || sr1 <= sr0) return;
+    const kx = tile.width / (c1 - c0), ky = tile.height / (r1 - r0);
+    tctx.imageSmoothingEnabled = false; // keep cells as crisp squares
+    tctx.drawImage(canvas, sc0, sr0, sc1 - sc0, sr1 - sr0,
+      (sc0 - c0) * kx, (sr0 - r0) * ky, (sc1 - sc0) * kx, (sr1 - sr0) * ky);
+  },
+
+  // Redraw the loaded tiles in place after the overlay changed (no flicker, unlike redraw()).
+  refresh() {
+    for (const { el, coords } of Object.values(this._tiles)) this.drawTile(el, coords);
   },
 });
 
@@ -246,7 +272,7 @@ function loadHash() {
 // ---------------------------------------------------------------------------------------------
 // Flood computation and rendering
 
-let canvas, ctx, overflowLayer;
+let canvas, ctx, floodTiles, overflowLayer;
 let lastResults = { areaKm2: null, volumeKm3: null };
 
 function initRender() {
@@ -257,7 +283,11 @@ function initRender() {
 
   const nw = lv95ToLatLng([dem.west, dem.north]);
   const se = lv95ToLatLng([dem.west + dem.cols * dem.cellsize, dem.north - dem.rows * dem.cellsize]);
-  new CanvasOverlay(null, L.latLngBounds(nw, se), { canvas, className: "flood-layer", opacity: 0.8 }).addTo(map);
+  // Own pane: above the base map tiles, below the dam lines and overflow paths.
+  map.createPane("flood").style.zIndex = 350;
+  floodTiles = new FloodTiles({
+    pane: "flood", bounds: L.latLngBounds(nw, se), opacity: 0.8, maxZoom: map.getMaxZoom(),
+  }).addTo(map);
   overflowLayer = L.layerGroup().addTo(map);
 }
 
@@ -275,6 +305,7 @@ function update() {
   const n = dem.cols * dem.rows;
   const pixels = new Uint8ClampedArray(wasm.memory.buffer, model.rgba_ptr(), 4 * n);
   ctx.putImageData(new ImageData(pixels, dem.cols, dem.rows), 0, 0);
+  floodTiles.refresh();
   const lakes = readLakes().filter((lake) => lake.cells * dem.cellsize ** 2 >= MIN_LAKE_AREA);
   drawOverflows(lakes);
 
