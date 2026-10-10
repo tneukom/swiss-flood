@@ -83,7 +83,7 @@ function addDam(pts, crest) {
   const empty = info.cells === 0;
   info.free();
   if (empty) return;
-  if (crest === undefined) crest = Math.min(range.max, range.min + 100);
+  if (crest === undefined) crest = range.max; // new dams reach the highest ground they cover
   const dam = { pts, crest, range };
   dam.line = L.polyline(pts.map(lv95ToLatLng), { color: "#c00", weight: 3 }).addTo(map);
   dams.push(dam);
