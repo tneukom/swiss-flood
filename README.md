@@ -4,10 +4,13 @@ Draw dams on a map of Switzerland and see what floods.
 
 ## Preprocess
 
-Turns the swisstopo DHM25 grid (`DHM25_MM_ASCII_GRID.zip`, 25 m) into a 50 m grid
-(min of each 2×2 block, rounded to 1 m, delta-encoded, zstd) in `web/data/`.
+Turns the swisstopo DHM25 grid (`DHM25_MM_ASCII_GRID.zip`, 25 m) into coarser grids (min of each
+block, rounded to 1 m, delta-encoded, zstd): 50 m in `web/data/50m/` for desktops, 100 m in
+`web/data/100m/` for phones and tablets (4× fewer cells, faster and less memory).
 
-    cd preprocess && cargo run --release -- ../DHM25_MM_ASCII_GRID.zip ../web/data 2
+    cd preprocess
+    cargo run --release -- ../DHM25_MM_ASCII_GRID.zip ../web/data/50m 2
+    cargo run --release -- ../DHM25_MM_ASCII_GRID.zip ../web/data/100m 4
 
 The last argument is the downsampling factor (2 → 50 m, 4 → 100 m). Add `--raw` to write plain
 little-endian u16 (`dem.u16`) instead, for experiments.
@@ -72,6 +75,8 @@ The "Examples" menu loads dams files from `web/examples/` (listed in `EXAMPLES` 
     python3 -m http.server -d web 8000
 
 Open http://localhost:8000. Dams are stored in the URL hash, so a link reproduces a scenario.
+Touch devices (primary pointer coarse, no hover) load the 100 m grid, others the 50 m grid;
+`?grid=50` or `?grid=100` forces one.
 
 Pushes to `main` publish `web/` to GitHub Pages (`.github/workflows/pages.yml`; needs
 Settings → Pages → Source: GitHub Actions): https://tneukom.github.io/swiss-flood/

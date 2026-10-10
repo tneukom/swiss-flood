@@ -1,8 +1,8 @@
 //! Native port of `flood()` from web/flood.js, to see how much faster Rust (and so at best a
-//! WASM module) would be. Reads web/data/dem.json + dem.bin.zst. Same algorithm and results,
+//! WASM module) would be. Reads web/data/50m/dem.json + dem.bin.zst. Same algorithm and results,
 //! but the bucket queue uses a Vec per metre instead of the JS version's linked lists.
 //!
-//!     cargo run --release -- [data dir, default ../web/data]
+//!     cargo run --release -- [data dir, default ../web/data/50m]
 //!
 //! # Algorithm
 //!
@@ -134,7 +134,7 @@ impl Flood {
 }
 
 fn main() {
-    let dir = std::env::args().nth(1).unwrap_or("../web/data".into());
+    let dir = std::env::args().nth(1).unwrap_or("../web/data/50m".into());
     let g = load(&dir);
     let outlets = find_outlets(&g);
     let mut flood = Flood::new(g.height.len());

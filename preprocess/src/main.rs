@@ -124,7 +124,7 @@ fn main() {
     let raw = std::env::args().any(|a| a == "--raw");
     let args: Vec<String> = std::env::args().filter(|a| a != "--raw").collect();
     let input = PathBuf::from(args.get(1).map(String::as_str).unwrap_or("../DHM25_MM_ASCII_GRID.zip"));
-    let out_dir = PathBuf::from(args.get(2).map(String::as_str).unwrap_or("../web/data"));
+    let out_dir = PathBuf::from(args.get(2).map(String::as_str).unwrap_or("../web/data/50m"));
     let factor: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(2);
 
     let mut archive = zip::ZipArchive::new(File::open(&input).expect("open zip")).unwrap();

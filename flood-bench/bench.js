@@ -1,7 +1,7 @@
 // Benchmarks the JS reference flood (flood_reference.js) and the WASM module (web/pkg) in Node,
 // and checks that both produce the same water levels.
 //
-//     node bench.js [data dir, default ../web/data]
+//     node bench.js [data dir, default ../web/data/50m]
 //
 // Times: JS = full flood only; WASM = compute(), i.e. flood + overlay colouring + lake search,
 // which only recomputes the region upstream of the dams.
@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 
-const dir = process.argv[2] || path.join(__dirname, "../web/data");
+const dir = process.argv[2] || path.join(__dirname, "../web/data/50m");
 const header = JSON.parse(fs.readFileSync(path.join(dir, "dem.json"), "utf8"));
 const compressed = fs.readFileSync(path.join(dir, "dem.bin.zst"));
 const { cols, rows } = header;

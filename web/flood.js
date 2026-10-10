@@ -155,12 +155,22 @@ async function fetchWithProgress(url, onProgress) {
 // Lets the browser paint (e.g. a status message) before a long synchronous step.
 const nextPaint = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
+// Height grid: 50 m on desktops, 100 m (4x fewer cells, ~4x faster and less memory) on phones and
+// tablets, told apart by their primary pointer (a finger, no hover). ?grid=50 / ?grid=100 overrides.
+const GRIDS = ["50m", "100m"];
+function chooseGrid() {
+  const forced = new URLSearchParams(location.search).get("grid");
+  if (forced && GRIDS.includes(`${forced}m`)) return `${forced}m`;
+  return matchMedia("(pointer: coarse) and (hover: none)").matches ? "100m" : "50m";
+}
+
 async function loadDem() {
+  const dir = `data/${chooseGrid()}`;
   const t0 = performance.now();
   const mb = (n) => (n / 1e6).toFixed(1);
   const [header, compressed] = await Promise.all([
-    fetch("data/dem.json").then((r) => r.json()),
-    fetchWithProgress("data/dem.bin.zst", (loaded, total) =>
+    fetch(`${dir}/dem.json`).then((r) => r.json()),
+    fetchWithProgress(`${dir}/dem.bin.zst`, (loaded, total) =>
       ui.setNotice(`Downloading height map… ${mb(loaded)}${total ? ` / ${mb(total)}` : ""} MB`)),
     init().then((exports) => (wasm = exports)),
   ]);
@@ -233,7 +243,7 @@ function styleDamLines() {
 // Dams are stored in the URL hash so a scenario can be shared as a link.
 function saveHash() {
   const data = dams.map((d) => ({ c: d.crest, p: d.pts.map(([x, y]) => [Math.round(x), Math.round(y)]) }));
-  history.replaceState(null, "", data.length ? "#" + encodeURIComponent(JSON.stringify(data)) : location.pathname);
+  history.replaceState(null, "", data.length ? "#" + encodeURIComponent(JSON.stringify(data)) : location.pathname + location.search);
 }
 
 function clearDams() {
@@ -404,7 +414,7 @@ function update() {
   ui.setResults({
     ...lastResults,
     meta: dams.length
-      ? `${lakes.length} lake${lakes.length === 1 ? "" : "s"} · computed in ${ms.toFixed(0)} ms`
+      ? `${lakes.length} lake${lakes.length === 1 ? "" : "s"} · ${dem.cellsize} m grid · computed in ${ms.toFixed(0)} ms`
       : "",
   });
   ui.setDams(dams.map((dam, k) => {
