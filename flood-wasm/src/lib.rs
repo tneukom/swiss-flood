@@ -41,8 +41,9 @@ use wasm_bindgen::prelude::*;
 
 /// Depth at which the colour ramp reaches its darkest blue.
 const RAMP_MAX_DEPTH: f64 = 200.0;
-/// Dam cells in the overlay (#C2410C, the UI's dam colour), as RGBA bytes in memory order.
-const DAM_COLOR: u32 = u32::from_le_bytes([0xC2, 0x41, 0x0C, 255]);
+/// Dam cells in the overlay (#C2410C, the UI's dam colour, semi-transparent so the dam line
+/// drawn on top dominates), as RGBA bytes in memory order.
+const DAM_COLOR: u32 = u32::from_le_bytes([0xC2, 0x41, 0x0C, 180]);
 /// Values of `FloodModel::mark`.
 const REGION: u8 = 1;
 const SEED: u8 = 2;

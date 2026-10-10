@@ -143,8 +143,23 @@ function removeDam(id) {
   update();
 }
 
+// The selected dam gets a yellow halo and white end/vertex dots, so it stands out on every base map.
+const selectionLayer = L.layerGroup().addTo(map);
+
 function styleDamLines() {
-  for (const dam of dams) dam.line.setStyle({ weight: dam.id === ui.selected ? 7 : 5 });
+  selectionLayer.clearLayers();
+  const dam = dams.find((d) => d.id === ui.selected);
+  if (!dam) return;
+  const latlngs = dam.line.getLatLngs();
+  L.polyline(latlngs, {
+    color: "#FFD60A", weight: 15, opacity: 0.9, lineCap: "round", interactive: false,
+  }).addTo(selectionLayer);
+  dam.line.bringToFront();
+  for (const ll of latlngs) {
+    L.circleMarker(ll, {
+      radius: 5, color: DAM_COLOR, weight: 3, fillColor: "#fff", fillOpacity: 1, interactive: false,
+    }).addTo(selectionLayer);
+  }
 }
 
 // Dams are stored in the URL hash so a scenario can be shared as a link.
