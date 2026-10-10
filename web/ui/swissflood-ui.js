@@ -62,7 +62,7 @@
     // ---------- DOM ----------
     const panel = h(`
       <section class="sf-panel" aria-label="Scenario">
-        <span class="sf-handle" aria-hidden="true"></span>
+        <button class="sf-handle" aria-label="Collapse panel" aria-expanded="true"></button>
         <header class="sf-header">
           ${ICON.logo}
           <h1>Swiss Flood</h1>
@@ -127,6 +127,7 @@
     const layerMenu = topright.querySelector('.sf-maplayers .sf-layer-menu');
     const exampleMenu = topright.querySelector('.sf-examples .sf-layer-menu');
     const fileInput = ref(panel, 'file');
+    const handle = panel.querySelector('.sf-handle');
 
     // ---------- Rendering ----------
     function renderLayers() {
@@ -267,6 +268,29 @@
       opts.onCrestChange && opts.onCrestChange(id, v, true);
     });
 
+    // Phone bottom sheet: tap the handle, or swipe it down/up, to collapse it to the totals.
+    let collapsed = false;
+    function setCollapsed(c) {
+      collapsed = c;
+      if (c && selected != null) api.select(null);
+      panel.classList.toggle('is-collapsed', c);
+      handle.setAttribute('aria-expanded', String(!c));
+      handle.setAttribute('aria-label', c ? 'Expand panel' : 'Collapse panel');
+    }
+    let swipeStartY = null, swiped = false;
+    handle.addEventListener('pointerdown', (e) => { swipeStartY = e.clientY; handle.setPointerCapture(e.pointerId); });
+    handle.addEventListener('pointerup', (e) => {
+      if (swipeStartY == null) return;
+      const dy = e.clientY - swipeStartY;
+      swipeStartY = null;
+      if (Math.abs(dy) > 24) { swiped = true; setCollapsed(dy > 0); }
+    });
+    handle.addEventListener('pointercancel', () => { swipeStartY = null; });
+    handle.addEventListener('click', () => {
+      if (swiped) { swiped = false; return; } // the swipe already decided
+      setCollapsed(!collapsed);
+    });
+
     fileInput.addEventListener('change', () => {
       const file = fileInput.files[0];
       fileInput.value = ''; // so picking the same file again fires 'change'
@@ -381,6 +405,7 @@
       },
       select(id) {
         selected = id;
+        if (id != null && collapsed) setCollapsed(false); // show the selected dam
         renderDams();
         opts.onSelect && opts.onSelect(id);
         if (id != null) {

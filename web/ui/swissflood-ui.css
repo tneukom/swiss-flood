@@ -214,7 +214,17 @@ body { font-family: var(--sf-font); color: var(--sf-ink); background: #DDE3E8; }
     border-radius: 20px 20px 0 0; border: 0; box-shadow: 0 -6px 24px rgba(20, 32, 43, 0.18);
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .sf-handle { display: block; align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #CDD4DB; margin: 8px 0 4px; flex-shrink: 0; }
+  /* Full-width touch target around the small grab bar. */
+  .sf-handle {
+    display: block; flex-shrink: 0; width: 100%; height: 24px; padding: 0; border: 0; background: transparent;
+    cursor: pointer; touch-action: none;
+  }
+  .sf-handle::before {
+    content: ''; display: block; width: 40px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: #CDD4DB;
+  }
+  /* Collapsed: only the handle and the totals. */
+  .sf-panel.is-collapsed > :not(.sf-handle):not(.sf-stats):not(.sf-notice) { display: none; }
+  .sf-panel.is-collapsed .sf-stats { padding-bottom: 16px; }
   .sf-header { display: none; }
   .sf-stats { padding: 8px 16px 0; }
   .sf-stat { padding: 10px 12px; }
