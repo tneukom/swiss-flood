@@ -30,7 +30,7 @@ flood and the WASM module: `cd flood-bench && node bench.js` (native Rust: `carg
 originally exported from a design tool; its API is documented at the top of
 `swissflood-ui.js`. Local changes: water level/depth in the cursor readout (`getWater`) and an
 optional `note` line on dam cards; in touch mode the drawing rubber band follows the crosshair only,
-not the mouse. `web/flood.js` sets up the LV95 map and connects the UI
+not the mouse; Delete/Backspace deletes the selected dam. `web/flood.js` sets up the LV95 map and connects the UI
 callbacks to the WASM model.
 
 ## Run

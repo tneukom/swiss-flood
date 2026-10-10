@@ -233,6 +233,8 @@
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'd' || e.key === 'D') { e.preventDefault(); api.startDraw(); }
       else if (e.key === 'Escape' && selected != null) api.select(null);
+      // The Mac "delete" key reports Backspace.
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && selected != null) { e.preventDefault(); opts.onDelete && opts.onDelete(selected); }
     });
 
     map.on('mousemove', (e) => {
