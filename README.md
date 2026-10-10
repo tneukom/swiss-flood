@@ -52,6 +52,7 @@ the file on the map) replaces the current dams with the file's. Points are LV95 
       "name": "Dam 1",
       "crest": 512,
       "points": [[2566120, 1118430], [2566480, 1118210]],
+      "length_m": 422,
       "ground_min": 417,
       "ground_max": 427,
       "lake_level": 510

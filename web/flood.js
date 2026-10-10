@@ -146,6 +146,9 @@ let nextDamId = 1;
 
 const flatten = (pts) => Float64Array.from(pts.flat());
 
+// Length along the dam line in metres (LV95 points are metres).
+const damLength = (pts) => pts.slice(1).reduce((sum, [x, y], k) => sum + Math.hypot(x - pts[k][0], y - pts[k][1]), 0);
+
 function addDam(pts, crest, name) {
   const info = model.dam_info(flatten(pts));
   const empty = info.cells === 0;
@@ -217,6 +220,7 @@ function downloadDams() {
       name: d.name,
       crest: d.crest,
       points: d.pts.map(([x, y]) => [Math.round(x), Math.round(y)]),
+      length_m: Math.round(damLength(d.pts)),
       ground_min: d.groundMin,
       ground_max: d.groundMax,
       lake_level: d.lakeLevel,
@@ -374,7 +378,10 @@ function update() {
     const note = lakeLevel > 0 && lakeLevel < dam.crest
       ? `Lake ${lakeLevel} m · water escapes ${dam.crest - lakeLevel} m below the crest`
       : "";
-    return { id: dam.id, name: dam.name, crest: dam.crest, groundMin: dam.groundMin, groundMax: dam.groundMax, note };
+    return {
+      id: dam.id, name: dam.name, crest: dam.crest, length: damLength(dam.pts),
+      groundMin: dam.groundMin, groundMax: dam.groundMax, note,
+    };
   }));
   styleDamLines();
   saveHash();

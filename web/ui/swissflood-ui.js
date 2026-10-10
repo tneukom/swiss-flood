@@ -20,7 +20,8 @@
  *     formatCoord(latlng) -> string,    // e.g. LV95 "E 2 683 600  N 1 257 800" (optional)
  *   });
  *   ui.setResults({ areaKm2, volumeKm3, meta })
- *   ui.setDams([{ id, name, crest, height, groundMin, groundMax, crestMin, crestMax, note }])
+ *   ui.setDams([{ id, name, crest, height, length, groundMin, groundMax, crestMin, crestMax, note }])
+ *                                       // length: metres along the dam line (optional)
  *                                       // note: optional extra line on the card
  *   ui.select(id | null)
  *   ui.setCursor(latlng, ground, water) // readout bottom-left (desktop); water = { level, depth }
@@ -136,13 +137,19 @@
         `<button role="menuitem" data-example="${esc(x.id)}">${esc(x.name)}</button>`).join('');
     }
 
+    // "206 m tall · 1.4 km long · ground 353–559 m"
+    function damSub(d) {
+      const height = d.height ?? (d.groundMin != null ? d.crest - d.groundMin : null);
+      const length = d.length == null ? null : d.length < 1000 ? `${fmt(d.length)} m long` : `${fmt(d.length / 1000, 1)} km long`;
+      return [height != null ? `${fmt(height)} m tall` : null, length,
+        d.groundMin != null ? `ground ${fmt(d.groundMin)}–${fmt(d.groundMax)} m` : null].filter(Boolean).join(' · ');
+    }
+
     function damCard(d) {
       const isSel = d.id === selected;
       const min = d.crestMin ?? Math.floor(d.groundMin ?? 0);
       const max = d.crestMax ?? Math.max(min + 100, Math.ceil((d.groundMax ?? d.crest) + 300));
-      const height = d.height ?? (d.groundMin != null ? d.crest - d.groundMin : null);
-      const sub = [height != null ? `${fmt(height)} m tall` : null,
-        d.groundMin != null ? `ground ${fmt(d.groundMin)}–${fmt(d.groundMax)} m` : null].filter(Boolean).join(' · ');
+      const sub = damSub(d);
       const field = (cls) => `
         <label class="sf-field ${cls}"><span class="sf-sr">${esc(d.name)} crest elevation</span>
           <input type="number" inputmode="numeric" step="1" value="${Math.round(d.crest)}" data-crest="${esc(d.id)}"><span>m</span></label>`;
@@ -191,7 +198,7 @@
       const d = dams.find((x) => String(x.id) === String(id));
       if (d && d.groundMin != null) {
         d.crest = crest; d.height = crest - d.groundMin;
-        card.querySelector('.sf-dam-sub').textContent = `${fmt(d.height)} m tall · ground ${fmt(d.groundMin)}–${fmt(d.groundMax)} m`;
+        card.querySelector('.sf-dam-sub').textContent = damSub(d);
       }
     }
 
