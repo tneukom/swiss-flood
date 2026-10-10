@@ -31,7 +31,7 @@ originally exported from a design tool; its API is documented at the top of
 `swissflood-ui.js`. Local changes: water level/depth in the cursor readout (`getWater`) and an
 optional `note` line on dam cards; in touch mode the drawing rubber band follows the crosshair only,
 not the mouse; Delete/Backspace deletes the selected dam; Open/Download buttons and file drop
-for dams files. `web/flood.js` sets up the LV95 map and connects the UI
+for dams files; an Examples menu. `web/flood.js` sets up the LV95 map and connects the UI
 callbacks to the WASM model.
 
 ## Dams file
@@ -61,6 +61,9 @@ the file on the map) replaces the current dams with the file's. Points are LV95 
 ```
 
 `lake_level` is the highest water level touching the dam, `null` if it holds no water.
+
+The "Examples" menu loads dams files from `web/examples/` (listed in `EXAMPLES` in
+`web/flood.js`); the first one opens on startup when the URL has no dams.
 
 ## Run
 

@@ -1,0 +1,23 @@
+{
+  "format": "swissflood-dams",
+  "version": 1,
+  "crs": "EPSG:2056",
+  "flooded_area_km2": 332.8025,
+  "water_added_km3": 8.78914,
+  "dams": [
+    {
+      "name": "Dam 4",
+      "crest": 559,
+      "points": [
+        [2666520, 1258650],
+        [2665952, 1258518],
+        [2665600, 1258198],
+        [2665368, 1257874],
+        [2665160, 1257714]
+      ],
+      "ground_min": 353,
+      "ground_max": 559,
+      "lake_level": 442
+    }
+  ]
+}

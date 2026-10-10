@@ -5,6 +5,8 @@
  *   const ui = SwissFloodUI.mount(map, {
  *     layers: [{ id, name }],  activeLayer: id,
  *     onLayerChange(id),
+ *     examples: [{ id, name }],         // scenarios for the "Examples" menu (optional)
+ *     onExample(id),
  *     onShare(),
  *     onDownload(),                     // save the dams as a file
  *     onOpenFile(file),                 // a File picked via "Open" or dropped on the map
@@ -33,6 +35,7 @@
     open: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
     link: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
     plus: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+    examples: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1D5FD1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
     layers: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1D5FD1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/></svg>',
     trash: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>',
     close: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>',
@@ -82,12 +85,18 @@
     let activeLayer = opts.activeLayer || (layers[0] && layers[0].id);
     const topright = h(`
       <div class="sf-topright">
-        <div class="sf-layers">
+        <div class="sf-layers sf-examples">
+          <button class="sf-pill" data-act="examples" aria-haspopup="true" aria-expanded="false">${ICON.examples}Examples</button>
+          <div class="sf-layer-menu" role="menu" hidden></div>
+        </div>
+        <div class="sf-layers sf-maplayers">
           <button class="sf-pill" data-act="layers" aria-haspopup="true" aria-expanded="false">${ICON.layers}Map layers</button>
           <div class="sf-layer-menu" role="menu" hidden></div>
         </div>
       </div>`);
-    if (!layers.length) topright.querySelector('.sf-layers').remove();
+    if (!layers.length) topright.querySelector('.sf-maplayers').remove();
+    const examples = opts.examples || [];
+    if (!examples.length) topright.querySelector('.sf-examples').remove();
 
     const zoom = h(`<div class="sf-zoom"><button data-act="zin" aria-label="Zoom in">+</button><span></span><button data-act="zout" aria-label="Zoom out">−</button></div>`);
     const readout = h(`<div class="sf-readout" aria-hidden="true"></div>`);
@@ -112,7 +121,8 @@
 
     const ref = (el, name) => el.querySelector(`[data-ref="${name}"]`);
     const damsEl = ref(panel, 'dams');
-    const layerMenu = topright.querySelector('.sf-layer-menu');
+    const layerMenu = topright.querySelector('.sf-maplayers .sf-layer-menu');
+    const exampleMenu = topright.querySelector('.sf-examples .sf-layer-menu');
     const fileInput = ref(panel, 'file');
 
     // ---------- Rendering ----------
@@ -120,6 +130,10 @@
       if (!layers.length) return;
       layerMenu.innerHTML = layers.map((l) =>
         `<button role="menuitemradio" aria-checked="${l.id === activeLayer}" data-layer="${esc(l.id)}">${esc(l.name)}</button>`).join('');
+    }
+    if (exampleMenu) {
+      exampleMenu.innerHTML = examples.map((x) =>
+        `<button role="menuitem" data-example="${esc(x.id)}">${esc(x.name)}</button>`).join('');
     }
 
     function damCard(d) {
@@ -183,13 +197,19 @@
 
     // ---------- Events ----------
     root.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act], [data-layer]');
+      const btn = e.target.closest('[data-act], [data-layer], [data-example]');
       if (!btn || !root.contains(btn)) return;
       const card = btn.closest('.sf-dam');
       const id = card && dams.find((d) => String(d.id) === card.dataset.id)?.id;
       if (btn.dataset.layer) {
         activeLayer = btn.dataset.layer; renderLayers(); toggleLayerMenu(false);
         opts.onLayerChange && opts.onLayerChange(activeLayer); return;
+      }
+      if (btn.dataset.example) {
+        toggleExampleMenu(false);
+        if (drawing) api.cancelDraw();
+        const x = examples.find((x) => String(x.id) === btn.dataset.example);
+        opts.onExample && x && opts.onExample(x.id); return;
       }
       switch (btn.dataset.act) {
         case 'share': opts.onShare && opts.onShare(); break;
@@ -200,7 +220,8 @@
         case 'deselect': api.select(null); break;
         case 'zoomto': opts.onZoomTo && opts.onZoomTo(id); break;
         case 'delete': opts.onDelete && opts.onDelete(id); break;
-        case 'layers': toggleLayerMenu(); break;
+        case 'layers': toggleExampleMenu(false); toggleLayerMenu(); break;
+        case 'examples': toggleLayerMenu(false); toggleExampleMenu(); break;
         case 'zin': map.zoomIn(); break;
         case 'zout': map.zoomOut(); break;
         case 'cancel': api.cancelDraw(); break;
@@ -210,12 +231,17 @@
       }
     });
 
-    function toggleLayerMenu(force) {
-      const open = force ?? layerMenu.hidden;
-      layerMenu.hidden = !open;
-      topright.querySelector('[data-act="layers"]').setAttribute('aria-expanded', String(open));
+    function toggleMenu(menu, act, force) {
+      if (!menu) return;
+      const open = force ?? menu.hidden;
+      menu.hidden = !open;
+      topright.querySelector(`[data-act="${act}"]`).setAttribute('aria-expanded', String(open));
     }
-    document.addEventListener('click', (e) => { if (!topright.contains(e.target)) toggleLayerMenu(false); });
+    const toggleLayerMenu = (force) => toggleMenu(layers.length && layerMenu, 'layers', force);
+    const toggleExampleMenu = (force) => toggleMenu(examples.length && exampleMenu, 'examples', force);
+    document.addEventListener('click', (e) => {
+      if (!topright.contains(e.target)) { toggleLayerMenu(false); toggleExampleMenu(false); }
+    });
 
     const crestFrom = (inp) => { const v = parseFloat(inp.value); return isNaN(v) ? null : v; };
     damsEl.addEventListener('input', (e) => {
@@ -357,6 +383,7 @@
         if (drawing) return;
         api.select(null);
         toggleLayerMenu(false);
+        toggleExampleMenu(false);
         drawing = {
           points: [], markers: [],
           line: L.polyline([], { color: '#C2410C', weight: 5, interactive: false }).addTo(map),

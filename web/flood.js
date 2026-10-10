@@ -235,29 +235,76 @@ function downloadDams() {
 async function openDamsFile(file) {
   if (!model) return;
   try {
-    const data = JSON.parse(await file.text());
-    if (data.format !== FILE_FORMAT || data.crs !== "EPSG:2056" || !Array.isArray(data.dams)) {
-      throw new Error("not a Swiss Flood dams file");
-    }
-    if (data.version > 1) throw new Error(`file version ${data.version} is newer than this app`);
-    const loaded = data.dams.filter((d) =>
-      Array.isArray(d.points) && d.points.length >= 2 &&
-      d.points.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)));
-    clearDams();
-    let skipped = data.dams.length - loaded.length;
-    for (const d of loaded) {
-      const crest = Number.isFinite(d.crest) ? Math.max(1, Math.min(65535, Math.round(d.crest))) : undefined;
-      if (!addDam(d.points, crest, typeof d.name === "string" ? d.name : undefined)) skipped++;
-    }
-    update();
-    if (dams.length) {
-      const bounds = L.latLngBounds(dams.flatMap((d) => d.line.getLatLngs()));
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 21 });
-    }
-    if (skipped) alert(`${skipped} dam${skipped === 1 ? "" : "s"} skipped (invalid or outside the height map).`);
+    loadDams(JSON.parse(await file.text()));
   } catch (e) {
     alert(`Could not open ${file.name}: ${e.message}`);
   }
+}
+
+// Example scenarios in examples/, dams files like the downloads. The first one loads on startup
+// when the URL has no dams.
+const EXAMPLES = [
+  { id: "baden", name: "Baden" },
+  { id: "villigen", name: "Villigen" },
+  { id: "nolla", name: "Nolla" },
+  { id: "alpen", name: "Alps" },
+];
+
+async function openExample(id) {
+  if (!model) return;
+  try {
+    const r = await fetch(`examples/${id}.json`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    loadDams(await r.json());
+  } catch (e) {
+    alert(`Could not load example ${id}: ${e.message}`);
+  }
+}
+
+// Zooms to the dams and the area they flood: the bounding box of all coloured overlay cells.
+function fitScenario() {
+  if (!dams.length) return;
+  const px = new Uint32Array(wasm.memory.buffer, model.rgba_ptr(), dem.cols * dem.rows);
+  let c0 = dem.cols, c1 = -1, r0 = dem.rows, r1 = -1;
+  for (let r = 0, i = 0; r < dem.rows; r++) {
+    for (let c = 0; c < dem.cols; c++, i++) {
+      if (px[i] === 0) continue;
+      if (c < c0) c0 = c;
+      if (c > c1) c1 = c;
+      if (r < r0) r0 = r;
+      r1 = r;
+    }
+  }
+  const bounds = L.latLngBounds(dams.flatMap((d) => d.line.getLatLngs()));
+  if (c1 >= 0) {
+    bounds.extend(lv95ToLatLng([dem.west + c0 * dem.cellsize, dem.north - r0 * dem.cellsize]));
+    bounds.extend(lv95ToLatLng([dem.west + (c1 + 1) * dem.cellsize, dem.north - (r1 + 1) * dem.cellsize]));
+  }
+  // Keep clear of the panel on the left (desktop) or the bottom sheet (phone).
+  const phone = window.matchMedia("(max-width: 640px)").matches;
+  map.fitBounds(bounds, {
+    paddingTopLeft: phone ? [24, 72] : [420, 80], paddingBottomRight: phone ? [24, 300] : [40, 40], maxZoom: 21,
+  });
+}
+
+// Replaces the dams with those of a dams file (parsed JSON); throws if it isn't one.
+function loadDams(data) {
+  if (data.format !== FILE_FORMAT || data.crs !== "EPSG:2056" || !Array.isArray(data.dams)) {
+    throw new Error("not a Swiss Flood dams file");
+  }
+  if (data.version > 1) throw new Error(`file version ${data.version} is newer than this app`);
+  const loaded = data.dams.filter((d) =>
+    Array.isArray(d.points) && d.points.length >= 2 &&
+    d.points.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)));
+  clearDams();
+  let skipped = data.dams.length - loaded.length;
+  for (const d of loaded) {
+    const crest = Number.isFinite(d.crest) ? Math.max(1, Math.min(65535, Math.round(d.crest))) : undefined;
+    if (!addDam(d.points, crest, typeof d.name === "string" ? d.name : undefined)) skipped++;
+  }
+  update();
+  fitScenario();
+  if (skipped) alert(`${skipped} dam${skipped === 1 ? "" : "s"} skipped (invalid or outside the height map).`);
 }
 
 function loadHash() {
@@ -403,6 +450,8 @@ const ui = SwissFloodUI.mount(map, {
   onShare() {
     navigator.clipboard?.writeText(location.href);
   },
+  examples: EXAMPLES,
+  onExample: openExample,
   onDownload: downloadDams,
   onOpenFile: openDamsFile,
   onDrawFinish(latlngs) {
@@ -447,6 +496,7 @@ const ui = SwissFloodUI.mount(map, {
     initRender();
     loadHash();
     update();
+    if (!dams.length) await openExample(EXAMPLES[0].id);
   } catch (e) {
     console.error(e);
     ui.setResults({ meta: "Failed to load height map: " + e.message });
