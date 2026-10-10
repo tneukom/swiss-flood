@@ -14,6 +14,8 @@
   <script src="ui/swissflood-ui.js"></script>
   <style>
     .flood-layer { image-rendering: pixelated; }
+    /* The national colour map is busy; desaturate it so the flood overlay stands out. */
+    .tiles-color { filter: saturate(0.4); }
     /* Dashes move from the overflow point towards the border. */
     .overflow-flow { animation: overflow-flow 0.8s linear infinite; }
     @keyframes overflow-flow { to { stroke-dashoffset: -16; } }

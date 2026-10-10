@@ -19,14 +19,17 @@ const crs = new L.Proj.CRS(
 const map = L.map("map", {
   crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZoom: 26, zoomControl: false, attributionControl: false,
 });
-const swisstopo = (layer, format = "jpeg", maxNativeZoom = 27) =>
+const swisstopo = (layer, format = "jpeg", maxNativeZoom = 27, className = "") =>
   L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.${format}`, {
     maxZoom: map.getMaxZoom(), // Leaflet's default (18) would hide tiles below 50 m/px
     maxNativeZoom,
+    className,
   });
 const baseLayers = {
   grey: { name: "Swiss map (grey)", layer: swisstopo("ch.swisstopo.pixelkarte-grau") },
-  color: { name: "Swiss map (colour)", layer: swisstopo("ch.swisstopo.pixelkarte-farbe") },
+  color: { name: "Swiss map (colour)", layer: swisstopo("ch.swisstopo.pixelkarte-farbe", "jpeg", 27, "tiles-color") },
+  // swissTLM map: no labels, calmer than the national map (Switzerland only).
+  light: { name: "Swiss map (light)", layer: swisstopo("ch.swisstopo.swisstlm3d-karte-farbe", "png") },
   photo: { name: "Aerial imagery", layer: swisstopo("ch.swisstopo.swissimage") },
   // swissALTI3D (2 m, Switzerland only) over swissALTIRegio, which also covers the surroundings.
   relief: {
