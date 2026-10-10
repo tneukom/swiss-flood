@@ -127,15 +127,51 @@ let dem; // { cols, rows, west, north, cellsize } in LV95
 let wasm; // WASM exports, for wasm.memory
 let model; // FloodModel: terrain, levels, dams, overlay pixels and lakes, all in WASM memory
 
+// Fetches a file, reporting progress as (loaded bytes, total bytes or 0).
+async function fetchWithProgress(url, onProgress) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  const total = Number(r.headers.get("Content-Length")) || 0;
+  if (!r.body) return new Uint8Array(await r.arrayBuffer());
+  const reader = r.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    onProgress(loaded, total);
+  }
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const c of chunks) {
+    bytes.set(c, offset);
+    offset += c.length;
+  }
+  return bytes;
+}
+
+// Lets the browser paint (e.g. a status message) before a long synchronous step.
+const nextPaint = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
 async function loadDem() {
+  const t0 = performance.now();
+  const mb = (n) => (n / 1e6).toFixed(1);
   const [header, compressed] = await Promise.all([
     fetch("data/dem.json").then((r) => r.json()),
-    fetch("data/dem.bin.zst").then((r) => r.arrayBuffer()),
+    fetchWithProgress("data/dem.bin.zst", (loaded, total) =>
+      ui.setNotice(`Downloading height map… ${mb(loaded)}${total ? ` / ${mb(total)}` : ""} MB`)),
     init().then((exports) => (wasm = exports)),
   ]);
+  const t1 = performance.now();
   // LV03 -> LV95 is a pure offset.
   dem = { ...header, west: header.west + 2000000, north: header.north + 1000000 };
-  model = new FloodModel(new Uint8Array(compressed), dem.cols, dem.rows, dem.west, dem.north, dem.cellsize);
+  ui.setNotice("Preparing height model…");
+  await nextPaint();
+  model = new FloodModel(compressed, dem.cols, dem.rows, dem.west, dem.north, dem.cellsize);
+  console.log(`Height map: download + WASM init ${(t1 - t0).toFixed(0)} ms, ` +
+    `decompress + baseline flood ${(performance.now() - t1).toFixed(0)} ms`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -511,6 +547,7 @@ function loadErrorText(e) {
 
 (async () => {
   ui.setNotice("Loading height map…");
+  // Each loading step updates the notice, so a hang on a slow device shows where it stopped.
   try {
     if (typeof WebAssembly !== "object") throw new Error("WebAssembly is not available");
     await loadDem();
