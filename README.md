@@ -36,7 +36,8 @@ optional `note` line on dam cards; in touch mode the drawing rubber band follows
 not the mouse; Delete/Backspace deletes the selected dam; Open/Download buttons and file drop
 for dams files; an Examples menu; a
 notice box (`setNotice`) for loading status and errors, visible on phones too. The phone bottom sheet
-collapses to the totals by tapping or swiping its handle. `web/flood.js` sets up the LV95 map and connects the UI
+collapses to the totals by tapping or swiping its handle. A labelled Share button (round icon
+button top right on phones) with a "Link copied" toast (`toast`). `web/flood.js` sets up the LV95 map and connects the UI
 callbacks to the WASM model.
 
 ## Dams file

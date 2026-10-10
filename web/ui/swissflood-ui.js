@@ -8,7 +8,7 @@
  *     onLayerChange(id),
  *     examples: [{ id, name }],         // scenarios for the "Examples" menu (optional)
  *     onExample(id),
- *     onShare(),
+ *     onShare(),                        // "Share" button (header on desktop, top right on phones)
  *     onDownload(),                     // save the dams as a file
  *     onOpenFile(file),                 // a File picked via "Open" or dropped on the map
  *     onDrawFinish(latlngs),            // user finished a new dam (array of L.LatLng)
@@ -28,6 +28,7 @@
  *   ui.select(id | null)
  *   ui.setCursor(latlng, ground, water) // readout bottom-left (desktop); water = { level, depth }
  *   ui.startDraw() / ui.cancelDraw()
+ *   ui.toast(text)                      // short confirmation, e.g. "Link copied"
  */
 (function () {
   'use strict';
@@ -58,6 +59,7 @@
 
     let dams = [];
     let selected = null;
+    let toastTimer = null;
     let drawing = null; // { points: [], line, rubber, markers: [] }
 
     // ---------- DOM ----------
@@ -69,7 +71,7 @@
           <h1>Swiss Flood</h1>
           <button class="sf-icon-btn" data-act="open" aria-label="Open dams file" title="Open dams file">${ICON.open}</button>
           <button class="sf-icon-btn" data-act="download" aria-label="Download dams" title="Download dams">${ICON.download}</button>
-          <button class="sf-icon-btn" data-act="share" aria-label="Copy share link" title="Copy share link">${ICON.link}</button>
+          <button class="sf-share" data-act="share" title="Copy a link to this scenario">${ICON.link}Share</button>
           <input type="file" accept=".json,application/json" data-ref="file" hidden>
         </header>
         <div class="sf-stats">
@@ -89,6 +91,7 @@
     let activeLayer = opts.activeLayer || (layers[0] && layers[0].id);
     const topright = h(`
       <div class="sf-topright">
+        <button class="sf-pill sf-pill-share" data-act="share" aria-label="Share link">${ICON.link}</button>
         <div class="sf-layers sf-examples">
           <button class="sf-pill" data-act="examples" aria-haspopup="true" aria-expanded="false">${ICON.examples}Examples</button>
           <div class="sf-layer-menu" role="menu" hidden></div>
@@ -113,6 +116,7 @@
         <button class="sf-round sf-round-dam" data-act="finish" disabled>Finish</button>
       </div>`);
     const hint = h(`<div class="sf-hint" hidden></div>`);
+    const toastEl = h(`<div class="sf-toast" role="status" hidden></div>`);
     const crosshair = h(`<div class="sf-crosshair" hidden>${ICON.crosshair}<div class="sf-crosshair-label"></div></div>`);
     const drawbottom = h(`
       <div class="sf-drawbottom" hidden>
@@ -120,7 +124,7 @@
         <button class="sf-addpoint" data-act="add">${ICON.target}Add point</button>
       </div>`);
 
-    [panel, topright, zoom, readout, attrib, drawbar, hint, crosshair, drawbottom].forEach((el) => root.appendChild(el));
+    [panel, topright, zoom, readout, attrib, drawbar, hint, toastEl, crosshair, drawbottom].forEach((el) => root.appendChild(el));
     [panel, topright, zoom, drawbar, drawbottom].forEach((el) => { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); });
 
     const ref = (el, name) => el.querySelector(`[data-ref="${name}"]`);
@@ -387,6 +391,12 @@
         ref(panel, 'volume').innerHTML = `${fmt(volumeKm3, 2)}<small>km³</small>`;
         ref(panel, 'meta').textContent = meta || '';
       },
+      toast(text) {
+        toastEl.textContent = text;
+        toastEl.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2200);
+      },
       setNotice(text, { error = false } = {}) {
         const el = ref(panel, 'notice');
         el.hidden = !text;
@@ -449,7 +459,7 @@
       },
       cancelDraw: endDraw,
       get isDrawing() { return !!drawing; },
-      destroy() { endDraw(); [panel, topright, zoom, readout, attrib, drawbar, hint, crosshair, drawbottom].forEach((el) => el.remove()); },
+      destroy() { endDraw(); [panel, topright, zoom, readout, attrib, drawbar, hint, toastEl, crosshair, drawbottom].forEach((el) => el.remove()); },
     };
 
     renderLayers();

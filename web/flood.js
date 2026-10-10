@@ -504,8 +504,23 @@ const ui = SwissFloodUI.mount(map, {
     activeLayer = id;
     baseLayers[id].layer.addTo(map); // tile pane, always below the flood overlay
   },
-  onShare() {
-    navigator.clipboard?.writeText(location.href);
+  async onShare() {
+    const url = location.href;
+    // Phones and tablets: the system share sheet (Messages, WhatsApp, …). Elsewhere: clipboard.
+    if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+      try {
+        await navigator.share({ title: "Swiss Flood", url });
+        return;
+      } catch (e) {
+        if (e.name === "AbortError") return; // closed the share sheet
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      ui.toast("Link copied");
+    } catch {
+      prompt("Copy this link:", url);
+    }
   },
   examples: EXAMPLES,
   onExample: openExample,
