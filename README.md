@@ -30,8 +30,37 @@ flood and the WASM module: `cd flood-bench && node bench.js` (native Rust: `carg
 originally exported from a design tool; its API is documented at the top of
 `swissflood-ui.js`. Local changes: water level/depth in the cursor readout (`getWater`) and an
 optional `note` line on dam cards; in touch mode the drawing rubber band follows the crosshair only,
-not the mouse; Delete/Backspace deletes the selected dam. `web/flood.js` sets up the LV95 map and connects the UI
+not the mouse; Delete/Backspace deletes the selected dam; Open/Download buttons and file drop
+for dams files. `web/flood.js` sets up the LV95 map and connects the UI
 callbacks to the WASM model.
+
+## Dams file
+
+The panel's download button saves the dams as `swissflood-dams.json`; the open button (or dropping
+the file on the map) replaces the current dams with the file's. Points are LV95 metres
+(EPSG:2056). Only `name`, `crest` and `points` are read back; the other fields are informational.
+
+```json
+{
+  "format": "swissflood-dams",
+  "version": 1,
+  "crs": "EPSG:2056",
+  "flooded_area_km2": 3.1,
+  "water_added_km3": 0.12,
+  "dams": [
+    {
+      "name": "Dam 1",
+      "crest": 512,
+      "points": [[2566120, 1118430], [2566480, 1118210]],
+      "ground_min": 417,
+      "ground_max": 427,
+      "lake_level": 510
+    }
+  ]
+}
+```
+
+`lake_level` is the highest water level touching the dam, `null` if it holds no water.
 
 ## Run
 

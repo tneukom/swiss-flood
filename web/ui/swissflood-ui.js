@@ -6,6 +6,8 @@
  *     layers: [{ id, name }],  activeLayer: id,
  *     onLayerChange(id),
  *     onShare(),
+ *     onDownload(),                     // save the dams as a file
+ *     onOpenFile(file),                 // a File picked via "Open" or dropped on the map
  *     onDrawFinish(latlngs),            // user finished a new dam (array of L.LatLng)
  *     onCrestChange(id, crest, final),  // final=false while dragging the slider, true on release/enter
  *     onDelete(id),
@@ -27,6 +29,8 @@
 
   const ICON = {
     logo: '<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke="#1D5FD1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c3 0 3-2 6-2s3 2 6 2 3-2 6-2"/><path d="M8 15V5h10v10"/><path d="M8 9h10"/></svg>',
+    download: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>',
+    open: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
     link: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
     plus: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
     layers: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1D5FD1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/></svg>',
@@ -57,7 +61,10 @@
         <header class="sf-header">
           ${ICON.logo}
           <h1>Swiss Flood</h1>
-          <button class="sf-icon-btn" data-act="share" aria-label="Copy share link">${ICON.link}</button>
+          <button class="sf-icon-btn" data-act="open" aria-label="Open dams file" title="Open dams file">${ICON.open}</button>
+          <button class="sf-icon-btn" data-act="download" aria-label="Download dams" title="Download dams">${ICON.download}</button>
+          <button class="sf-icon-btn" data-act="share" aria-label="Copy share link" title="Copy share link">${ICON.link}</button>
+          <input type="file" accept=".json,application/json" data-ref="file" hidden>
         </header>
         <div class="sf-stats">
           <div class="sf-stat"><div class="sf-stat-label">Flooded area</div><div class="sf-stat-value" data-ref="area">–<small>km²</small></div></div>
@@ -106,6 +113,7 @@
     const ref = (el, name) => el.querySelector(`[data-ref="${name}"]`);
     const damsEl = ref(panel, 'dams');
     const layerMenu = topright.querySelector('.sf-layer-menu');
+    const fileInput = ref(panel, 'file');
 
     // ---------- Rendering ----------
     function renderLayers() {
@@ -185,6 +193,8 @@
       }
       switch (btn.dataset.act) {
         case 'share': opts.onShare && opts.onShare(); break;
+        case 'download': opts.onDownload && opts.onDownload(); break;
+        case 'open': fileInput.click(); break;
         case 'draw': api.startDraw(); break;
         case 'select': api.select(selected === id && !touchUI.matches ? null : id); break;
         case 'deselect': api.select(null); break;
@@ -220,6 +230,24 @@
       const v = crestFrom(inp); if (v == null) return;
       const id = dams.find((d) => String(d.id) === idStr)?.id;
       opts.onCrestChange && opts.onCrestChange(id, v, true);
+    });
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileInput.value = ''; // so picking the same file again fires 'change'
+      if (file && opts.onOpenFile) opts.onOpenFile(file);
+    });
+
+    // Dropping a file anywhere on the map opens it too.
+    root.addEventListener('dragover', (e) => {
+      if (opts.onOpenFile && e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+    });
+    root.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files[0];
+      if (!file || !opts.onOpenFile) return;
+      e.preventDefault();
+      if (drawing) api.cancelDraw();
+      opts.onOpenFile(file);
     });
 
     document.addEventListener('keydown', (e) => {

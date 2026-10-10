@@ -112,19 +112,19 @@ async function loadDem() {
 // ---------------------------------------------------------------------------------------------
 // Dams
 
-let dams = []; // { id, name, pts: [[x, y], ...] LV95 metres, crest, groundMin, groundMax, line }
+let dams = []; // { id, name, pts: [[x, y], ...] LV95 metres, crest, groundMin, groundMax, lakeLevel, line }
 let nextDamId = 1;
 
 const flatten = (pts) => Float64Array.from(pts.flat());
 
-function addDam(pts, crest) {
+function addDam(pts, crest, name) {
   const info = model.dam_info(flatten(pts));
   const empty = info.cells === 0;
   const dam = { pts, groundMin: info.terrain_min, groundMax: info.terrain_max };
   info.free();
   if (empty) return null;
   dam.id = nextDamId++;
-  dam.name = `Dam ${dam.id}`;
+  dam.name = name || `Dam ${dam.id}`;
   dam.crest = crest ?? dam.groundMax; // new dams reach the highest ground they cover
   dam.line = L.polyline(pts.map(lv95ToLatLng), { color: DAM_COLOR, weight: 5 }).addTo(map);
   dam.line.on("click", (e) => {
@@ -168,6 +168,69 @@ function saveHash() {
   history.replaceState(null, "", data.length ? "#" + encodeURIComponent(JSON.stringify(data)) : location.pathname);
 }
 
+function clearDams() {
+  for (const dam of dams) map.removeLayer(dam.line);
+  dams = [];
+  ui.select(null);
+}
+
+// Dams file: LV95 points and crests. The other fields are informational and ignored on open.
+const FILE_FORMAT = "swissflood-dams";
+
+function downloadDams() {
+  const data = {
+    format: FILE_FORMAT,
+    version: 1,
+    crs: "EPSG:2056",
+    flooded_area_km2: lastResults.areaKm2,
+    water_added_km3: lastResults.volumeKm3,
+    dams: dams.map((d) => ({
+      name: d.name,
+      crest: d.crest,
+      points: d.pts.map(([x, y]) => [Math.round(x), Math.round(y)]),
+      ground_min: d.groundMin,
+      ground_max: d.groundMax,
+      lake_level: d.lakeLevel,
+    })),
+  };
+  // Indented, but with each [x, y] point on one line.
+  const text = JSON.stringify(data, null, 2).replace(/\[\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]/g, "[$1, $2]");
+  const url = URL.createObjectURL(new Blob([text + "\n"], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "swissflood-dams.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function openDamsFile(file) {
+  if (!model) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== FILE_FORMAT || data.crs !== "EPSG:2056" || !Array.isArray(data.dams)) {
+      throw new Error("not a Swiss Flood dams file");
+    }
+    if (data.version > 1) throw new Error(`file version ${data.version} is newer than this app`);
+    const loaded = data.dams.filter((d) =>
+      Array.isArray(d.points) && d.points.length >= 2 &&
+      d.points.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)));
+    clearDams();
+    let skipped = data.dams.length - loaded.length;
+    for (const d of loaded) {
+      const crest = Number.isFinite(d.crest) ? Math.max(1, Math.min(65535, Math.round(d.crest))) : undefined;
+      if (!addDam(d.points, crest, typeof d.name === "string" ? d.name : undefined)) skipped++;
+    }
+    update();
+    if (dams.length) {
+      const bounds = L.latLngBounds(dams.flatMap((d) => d.line.getLatLngs()));
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 21 });
+    }
+    if (skipped) alert(`${skipped} dam${skipped === 1 ? "" : "s"} skipped (invalid or outside the height map).`);
+  } catch (e) {
+    alert(`Could not open ${file.name}: ${e.message}`);
+  }
+}
+
 function loadHash() {
   if (location.hash.length < 2) return;
   try {
@@ -181,6 +244,7 @@ function loadHash() {
 // Flood computation and rendering
 
 let canvas, ctx, overflowLayer;
+let lastResults = { areaKm2: null, volumeKm3: null };
 
 function initRender() {
   canvas = document.createElement("canvas");
@@ -212,9 +276,12 @@ function update() {
   drawOverflows(lakes);
 
   const cellArea = dem.cellsize * dem.cellsize;
-  ui.setResults({
+  lastResults = {
     areaKm2: dams.length ? (cells * cellArea) / 1e6 : null,
     volumeKm3: dams.length ? (volume * cellArea) / 1e9 : null,
+  };
+  ui.setResults({
+    ...lastResults,
     meta: dams.length
       ? `${lakes.length} lake${lakes.length === 1 ? "" : "s"} · computed in ${ms.toFixed(0)} ms`
       : "",
@@ -222,6 +289,7 @@ function update() {
   ui.setDams(dams.map((dam, k) => {
     // Water held below the crest escapes elsewhere (e.g. around the dam's end); worth a note.
     const lakeLevel = model.dam_lake_level(k);
+    dam.lakeLevel = lakeLevel > 0 ? lakeLevel : null;
     const note = lakeLevel > 0 && lakeLevel < dam.crest
       ? `Lake ${lakeLevel} m · water escapes ${dam.crest - lakeLevel} m below the crest`
       : "";
@@ -301,6 +369,8 @@ const ui = SwissFloodUI.mount(map, {
   onShare() {
     navigator.clipboard?.writeText(location.href);
   },
+  onDownload: downloadDams,
+  onOpenFile: openDamsFile,
   onDrawFinish(latlngs) {
     if (!model) return;
     const dam = addDam(latlngs.map(latLngToLv95));
