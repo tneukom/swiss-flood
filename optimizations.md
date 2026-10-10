@@ -1,28 +1,31 @@
 # Optimizations
 
-Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~0.85 s in WASM
-(~0.6 s native Rust), memory is ~1 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
+Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): a full flood takes ~0.85 s in WASM
+(~0.6 s native Rust), memory is ~1.2 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
 `node bench.js`).
 
-## Recompute only upstream of the dams (biggest win)
+## Recompute only upstream of the dams: done
 
-Dams only raise heights, so a cell's level can only change if its drainage path in the baseline
-(no dams) passes through a dam cell. All other cells keep exactly their baseline level.
+Dams only raise heights, so a cell's level can only change if its baseline drainage path passes
+through a dam cell. `compute()` in flood-wasm finds that region (walking upstream from the dam
+cells via `base_parent`), re-floods only it seeded from its border, and colours/searches lakes
+only there; the next compute resets just the previous region. Levels are identical to a full
+flood (randomized unit test + real-data check in `flood-bench/bench.js`); drainage paths across
+perfectly flat ground can differ.
 
-1. Mark the catchment of the dam cells: every cell whose baseline parent chain reaches a dam cell
-   (one O(n) pass with memoization over the parent tree).
-2. Re-flood only the catchment, seeded from the cells bordering it with their (unchanged)
-   baseline levels.
+Measured at 50 m in Node: St-Maurice dam 1.9M cells (5% of the grid), ~120 ms instead of
+~850 ms. A dam on the Rhine below the Aare drains about half of Switzerland: 12.4M cells, no gain
+(~820 ms). Costs ~175 MB extra memory (`base_parent` and a 1-byte mark per cell).
 
-Exact, not an approximation. St-Maurice dam: ~2M of 23M cells, so roughly 10× faster. A dam near
-Basel drains almost all of Switzerland and gains nothing. Needs the baseline parents kept around.
+Remaining full-grid step: the page's `putImageData` of the whole overlay after every compute.
+Could pass the region's bounding box and update only that rectangle.
 
 ## Memory trimming (~29 → ~11 bytes per cell, ~1 GB → ~390 MB)
 
 | Array | Now | Change | After |
 |---|---|---|---|
 | `terrain` | 2 | keep | 2 |
-| `baseLevel` | 2 | keep (seeds for the upstream recompute) | 2 |
+| `base_level` | 2 | keep (seeds for the upstream recompute) | 2 |
 | `level` | 2 | keep | 2 |
 | `next` | 4 | keep (bucket queue needs cell indices) | 4 |
 | `parent` | 4 | direction 0–7 (255 = outlet), `i += OFFSETS[parent[i]]` | 1 |

@@ -102,12 +102,21 @@ export class FloodModel {
         return ret >>> 0;
     }
     /**
-     * Floods with the current dams, renders the overlay and finds lakes.
+     * Floods with the current dams, renders the overlay and finds lakes. Only recomputes the
+     * region upstream of the dams, see the module docs.
      * @returns {Stats}
      */
     compute() {
         const ret = wasm.floodmodel_compute(this.__wbg_ptr);
         return Stats.__wrap(ret);
+    }
+    /**
+     * Pointer to the terrain with dam crests applied (cols × rows u16), for tests and benchmarks.
+     * @returns {number}
+     */
+    dam_height_ptr() {
+        const ret = wasm.floodmodel_dam_height_ptr(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * Rasterizes a dam polyline without adding it, e.g. to pick a default crest.
@@ -225,6 +234,14 @@ export class FloodModel {
         this.__wbg_ptr = ret[0];
         FloodModelFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * Number of cells the last compute re-flooded (dam cells and their upstream catchment).
+     * @returns {number}
+     */
+    region_cells() {
+        const ret = wasm.floodmodel_region_cells(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * Pointer to the RGBA overlay (cols × rows × 4 bytes) in WASM memory. Create the JS view

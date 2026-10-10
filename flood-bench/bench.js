@@ -3,7 +3,8 @@
 //
 //     node bench.js [data dir, default ../web/data]
 //
-// Times: JS = flood only; WASM = compute(), i.e. flood + overlay colouring + lake search.
+// Times: JS = full flood only; WASM = compute(), i.e. flood + overlay colouring + lake search,
+// which only recomputes the region upstream of the dams.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -63,11 +64,30 @@ time("JS flood", () => jsFlood(terrain, jsLevel, jsParent));
   const t = performance.now();
   const model = new FloodModel(compressed, cols, rows, header.west + 2000000, header.north + 1000000, header.cellsize);
   console.log(`WASM load (decompress + decode + outlets + baseline flood): ${(performance.now() - t).toFixed(0)} ms`);
-  time("WASM compute", () => model.compute());
+  time("WASM compute, no dams", () => model.compute());
 
   // Without dams the level is the plain flood of the terrain, so it must match the JS exactly.
-  const wasmLevel = new Uint16Array(wasm.memory.buffer, model.level_ptr(), n);
+  const wasmLevel = () => new Uint16Array(wasm.memory.buffer, model.level_ptr(), n);
   let diff = 0;
-  for (let i = 0; i < n; i++) if (wasmLevel[i] !== jsLevel[i]) diff++;
+  for (let i = 0, level = wasmLevel(); i < n; i++) if (level[i] !== jsLevel[i]) diff++;
   console.log(`levels differing between JS and WASM: ${diff}`);
+
+  // With dams, WASM recomputes only upstream of them; compare with a full JS flood of the same
+  // dammed terrain. LV95 polylines and crests.
+  const scenarios = {
+    "St-Maurice (Rhone)": [[[2565000, 1118300, 2568000, 1118300], 600]],
+    "Koblenz (Rhine below the Aare)": [[[2657500, 1268000, 2657500, 1276000], 400]],
+  };
+  for (const [name, dams] of Object.entries(scenarios)) {
+    model.clear_dams();
+    for (const [xy, crest] of dams) model.add_dam(Float64Array.from(xy), crest);
+    time(`WASM compute, ${name}`, () => model.compute());
+    const dammed = new Uint16Array(wasm.memory.buffer, model.dam_height_ptr(), n).slice();
+    jsFlood(dammed, jsLevel, jsParent);
+    let diff = 0;
+    for (let i = 0, level = wasmLevel(); i < n; i++) if (level[i] !== jsLevel[i]) diff++;
+    const region = model.region_cells();
+    console.log(`  recomputed ${region} cells (${((100 * region) / n).toFixed(1)}% of grid), ` +
+      `${model.lake_count()} lakes, levels differing from full JS flood: ${diff}`);
+  }
 })();

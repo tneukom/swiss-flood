@@ -25,9 +25,14 @@ export class FloodModel {
     clear_dams(): void;
     cols(): number;
     /**
-     * Floods with the current dams, renders the overlay and finds lakes.
+     * Floods with the current dams, renders the overlay and finds lakes. Only recomputes the
+     * region upstream of the dams, see the module docs.
      */
     compute(): Stats;
+    /**
+     * Pointer to the terrain with dam crests applied (cols × rows u16), for tests and benchmarks.
+     */
+    dam_height_ptr(): number;
     /**
      * Rasterizes a dam polyline without adding it, e.g. to pick a default crest.
      * `xy`: LV95 coordinates as [x0, y0, x1, y1, ...].
@@ -60,6 +65,10 @@ export class FloodModel {
      * planes, see preprocess/). `west`/`north`: LV95 north-west corner.
      */
     constructor(compressed: Uint8Array, cols: number, rows: number, west: number, north: number, cellsize: number);
+    /**
+     * Number of cells the last compute re-flooded (dam cells and their upstream catchment).
+     */
+    region_cells(): number;
     /**
      * Pointer to the RGBA overlay (cols × rows × 4 bytes) in WASM memory. Create the JS view
      * after `compute`: if WASM memory grew, older views are detached.
@@ -105,6 +114,7 @@ export interface InitOutput {
     readonly floodmodel_clear_dams: (a: number) => void;
     readonly floodmodel_cols: (a: number) => number;
     readonly floodmodel_compute: (a: number) => number;
+    readonly floodmodel_dam_height_ptr: (a: number) => number;
     readonly floodmodel_dam_info: (a: number, b: number, c: number) => number;
     readonly floodmodel_lake_cells: (a: number, b: number) => number;
     readonly floodmodel_lake_count: (a: number) => number;
@@ -117,6 +127,7 @@ export interface InitOutput {
     readonly floodmodel_level_at: (a: number, b: number) => number;
     readonly floodmodel_level_ptr: (a: number) => number;
     readonly floodmodel_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly floodmodel_region_cells: (a: number) => number;
     readonly floodmodel_rgba_ptr: (a: number) => number;
     readonly floodmodel_rows: (a: number) => number;
     readonly floodmodel_terrain_at: (a: number, b: number) => number;

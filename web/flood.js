@@ -172,7 +172,8 @@ function update() {
   const cellArea = dem.cellsize * dem.cellsize;
   $("stats").textContent = dams.length
     ? `Flooded ${((cells * cellArea) / 1e6).toFixed(1)} km², ` +
-      `additional water ${((volume * cellArea) / 1e9).toFixed(2)} km³ (compute ${ms.toFixed(0)} ms)`
+      `additional water ${((volume * cellArea) / 1e9).toFixed(2)} km³ ` +
+      `(compute ${ms.toFixed(0)} ms, ${(model.region_cells() / 1e6).toFixed(1)}M cells upstream of dams)`
     : "";
   renderLakeList(lakes);
   renderDamList();

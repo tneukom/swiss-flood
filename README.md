@@ -35,4 +35,5 @@ Open http://localhost:8000. Dams are stored in the URL hash, so a link reproduce
 Every cell bordering the outside of Switzerland is an outlet. A priority-flood with a bucket
 queue (one bucket per metre) computes the water level everywhere. The flood is run once without
 dams as a baseline (fills natural depressions); only cells where the level with dams is higher
-than the baseline are shown.
+than the baseline are shown. When dams change, only the cells whose baseline drainage runs
+through a dam are re-flooded; all others keep their baseline level exactly.
