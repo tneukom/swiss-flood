@@ -316,7 +316,7 @@ function update() {
     }
   }
   ctx.putImageData(image, 0, 0);
-  const lakes = findLakes().filter((lake) => lake.cells >= MIN_LAKE_CELLS);
+  const lakes = findLakes().filter((lake) => lake.cells * dem.cellsize ** 2 >= MIN_LAKE_AREA);
   drawOverflows(lakes);
 
   const cellArea = dem.cellsize * dem.cellsize;
@@ -333,7 +333,7 @@ function update() {
 // ---------------------------------------------------------------------------------------------
 // Lakes and overflow paths
 
-const MIN_LAKE_CELLS = 4; // ignore tiny slivers so they don't clutter the map
+const MIN_LAKE_AREA = 40000; // m², ignore tiny slivers so they don't clutter the map
 const OVERFLOW_COLOR = "#d0f"; // magenta: not used by roads or water on the swisstopo maps
 
 function isFlooded(i) {

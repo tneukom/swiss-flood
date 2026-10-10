@@ -1,8 +1,8 @@
 {
-  "cols": 3851,
-  "rows": 2281,
+  "cols": 7701,
+  "rows": 4561,
   "west": 479987.5,
   "north": 302012.5,
-  "cellsize": 100,
+  "cellsize": 50,
   "crs": "EPSG:21781"
 }

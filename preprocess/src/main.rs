@@ -5,6 +5,8 @@
 //!   dem.bin.zst  zstd-compressed u16 heights in metres, row-major from the north-west corner.
 //!                0 = NODATA (outside Switzerland). Values are delta-encoded (wrapping,
 //!                row-major) and split into a low-byte plane followed by a high-byte plane.
+//!   dem.u16      with --raw instead of dem.bin.zst: the same heights as plain little-endian u16,
+//!                uncompressed and not delta-encoded, for experiments.
 //!
 //! Downsampling takes the *minimum* of each block so narrow river channels stay open.
 
@@ -104,11 +106,26 @@ impl<R: Read> Tokens<R> {
     }
 }
 
+/// Delta encode, split into byte planes for better compression, then zstd.
+fn encode(heights: &[u16]) -> Vec<u8> {
+    let n = heights.len();
+    let mut planes = vec![0u8; 2 * n];
+    let mut prev = 0u16;
+    for (i, &v) in heights.iter().enumerate() {
+        let d = v.wrapping_sub(prev);
+        prev = v;
+        planes[i] = d as u8;
+        planes[n + i] = (d >> 8) as u8;
+    }
+    zstd::bulk::compress(&planes, 19).unwrap()
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let raw = std::env::args().any(|a| a == "--raw");
+    let args: Vec<String> = std::env::args().filter(|a| a != "--raw").collect();
     let input = PathBuf::from(args.get(1).map(String::as_str).unwrap_or("../DHM25_MM_ASCII_GRID.zip"));
     let out_dir = PathBuf::from(args.get(2).map(String::as_str).unwrap_or("../web/data"));
-    let factor: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(4);
+    let factor: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(2);
 
     let mut archive = zip::ZipArchive::new(File::open(&input).expect("open zip")).unwrap();
     let entry = archive.by_name(ASC_NAME).expect("asc file in zip");
@@ -143,25 +160,18 @@ fn main() {
         .map(|&v| if v.is_finite() { v.round().clamp(1.0, 65535.0) as u16 } else { 0 })
         .collect();
 
-    // Delta encode then split into byte planes for better compression.
-    let n = heights.len();
-    let mut planes = vec![0u8; 2 * n];
-    let mut prev = 0u16;
-    for (i, &v) in heights.iter().enumerate() {
-        let d = v.wrapping_sub(prev);
-        prev = v;
-        planes[i] = d as u8;
-        planes[n + i] = (d >> 8) as u8;
-    }
-    let compressed = zstd::bulk::compress(&planes, 19).unwrap();
-
     // Origin = north-west corner of the output grid (cell edges, not centres), in LV03.
     let out_cellsize = h.cellsize * factor as f64;
     let west = h.xllcorner;
     let north = h.yllcorner + h.nrows as f64 * h.cellsize;
 
     std::fs::create_dir_all(&out_dir).unwrap();
-    File::create(out_dir.join("dem.bin.zst")).unwrap().write_all(&compressed).unwrap();
+    let (file_name, bytes) = if raw {
+        ("dem.u16", heights.iter().flat_map(|v| v.to_le_bytes()).collect())
+    } else {
+        ("dem.bin.zst", encode(&heights))
+    };
+    File::create(out_dir.join(file_name)).unwrap().write_all(&bytes).unwrap();
     let json = format!(
         "{{\n  \"cols\": {out_cols},\n  \"rows\": {out_rows},\n  \"west\": {west},\n  \"north\": {north},\n  \"cellsize\": {out_cellsize},\n  \"crs\": \"EPSG:21781\"\n}}\n"
     );
@@ -169,10 +179,10 @@ fn main() {
 
     let valid: Vec<u16> = heights.iter().copied().filter(|&v| v != 0).collect();
     eprintln!(
-        "output {out_cols}x{out_rows} @ {out_cellsize}m, height {}..{} m, {} valid cells, {} bytes compressed",
+        "output {out_cols}x{out_rows} @ {out_cellsize}m, height {}..{} m, {} valid cells, {} bytes written to {file_name}",
         valid.iter().min().unwrap(),
         valid.iter().max().unwrap(),
         valid.len(),
-        compressed.len()
+        bytes.len()
     );
 }
