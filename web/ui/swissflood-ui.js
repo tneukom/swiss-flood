@@ -4,6 +4,7 @@
  *
  *   const ui = SwissFloodUI.mount(map, {
  *     layers: [{ id, name }],  activeLayer: id,
+ *     version: string,                  // shown small at the bottom of the layer menu (optional)
  *     onLayerChange(id),
  *     examples: [{ id, name }],         // scenarios for the "Examples" menu (optional)
  *     onExample(id),
@@ -133,7 +134,8 @@
     function renderLayers() {
       if (!layers.length) return;
       layerMenu.innerHTML = layers.map((l) =>
-        `<button role="menuitemradio" aria-checked="${l.id === activeLayer}" data-layer="${esc(l.id)}">${esc(l.name)}</button>`).join('');
+        `<button role="menuitemradio" aria-checked="${l.id === activeLayer}" data-layer="${esc(l.id)}">${esc(l.name)}</button>`).join('') +
+        (opts.version ? `<div class="sf-version">Version ${esc(opts.version)}</div>` : '');
     }
     if (exampleMenu) {
       exampleMenu.innerHTML = examples.map((x) =>

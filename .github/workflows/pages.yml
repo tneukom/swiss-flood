@@ -23,6 +23,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp version
+        run: |
+          version="$(TZ=Europe/Zurich git log -1 --format='%h · %cd' --date=format-local:'%Y-%m-%d %H:%M')"
+          sed -i "s/^const VERSION = \"dev\";/const VERSION = \"$version\";/" web/flood.js
+          grep -q "^const VERSION = \"$version\";" web/flood.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

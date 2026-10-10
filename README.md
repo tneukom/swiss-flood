@@ -81,6 +81,8 @@ Touch devices (primary pointer coarse, no hover) load the 100 m grid, others the
 
 Pushes to `main` publish `web/` to GitHub Pages (`.github/workflows/pages.yml`; needs
 Settings → Pages → Source: GitHub Actions): https://tneukom.github.io/swiss-flood/
+The workflow stamps the commit and its date into `VERSION` in `web/flood.js`, shown at the bottom
+of the Map layers menu ("dev" locally).
 
 ## How it works
 

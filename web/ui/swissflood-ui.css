@@ -141,6 +141,10 @@ body { font-family: var(--sf-font); color: var(--sf-ink); background: #DDE3E8; }
 }
 .sf-layer-menu button:hover { background: var(--sf-surface-2); }
 .sf-layer-menu button[aria-checked="true"] { font-weight: 600; color: var(--sf-water); }
+.sf-version {
+  margin-top: 4px; padding: 8px 12px 4px; border-top: 1px solid var(--sf-line-soft);
+  font-family: var(--sf-mono); font-size: 11px; color: var(--sf-muted);
+}
 .sf-zoom {
   position: absolute; z-index: 1000; bottom: 36px; right: 16px; display: flex; flex-direction: column;
   border: 1px solid rgba(20, 32, 43, 0.08); border-radius: 12px; background: var(--sf-surface);

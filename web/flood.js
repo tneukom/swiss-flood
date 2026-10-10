@@ -3,6 +3,9 @@
 // SwissFloodUI module (ui/). This file sets up the LV95 map and connects the two.
 import init, { FloodModel } from "./pkg/flood_wasm.js";
 
+// Replaced with the commit and its date by the GitHub Pages workflow; shown in the layer menu.
+const VERSION = "dev";
+
 // LV95 (EPSG:2056) map with swisstopo tiles, so the LV03/LV95 height grid is axis-aligned.
 const crs = new L.Proj.CRS(
   "EPSG:2056",
@@ -495,6 +498,7 @@ function drawOverflows(lakes) {
 const ui = SwissFloodUI.mount(map, {
   layers: Object.entries(baseLayers).map(([id, { name }]) => ({ id, name })),
   activeLayer,
+  version: VERSION,
   onLayerChange(id) {
     map.removeLayer(baseLayers[activeLayer].layer);
     activeLayer = id;
