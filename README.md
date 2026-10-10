@@ -24,6 +24,15 @@ target):
 Unit tests run natively: `cd flood-wasm && cargo test`. Benchmarks comparing the JS reference
 flood and the WASM module: `cd flood-bench && node bench.js` (native Rust: `cargo run --release`).
 
+## UI
+
+`web/ui/` is the SwissFloodUI module (panel / bottom sheet, dam cards, layer menu, draw mode),
+originally exported from a design tool; its API is documented at the top of
+`swissflood-ui.js`. Local changes: water level/depth in the cursor readout (`getWater`) and an
+optional `note` line on dam cards; in touch mode the drawing rubber band follows the crosshair only,
+not the mouse. `web/flood.js` sets up the LV95 map and connects the UI
+callbacks to the WASM model.
+
 ## Run
 
     python3 -m http.server -d web 8000

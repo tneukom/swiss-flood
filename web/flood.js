@@ -1,5 +1,6 @@
-// Map UI. The height grid, flood, overlay colouring and lake search live in the Rust/WASM module
-// (flood-wasm/, built into pkg/); this file handles Leaflet, dam drawing and the panel.
+// Map glue. The height grid, flood, overlay colouring and lake search live in the Rust/WASM module
+// (flood-wasm/, built into pkg/); the panel, dam list, map controls and draw mode are the
+// SwissFloodUI module (ui/). This file sets up the LV95 map and connects the two.
 import init, { FloodModel } from "./pkg/flood_wasm.js";
 
 // LV95 (EPSG:2056) map with swisstopo tiles, so the LV03/LV95 height grid is axis-aligned.
@@ -14,25 +15,30 @@ const crs = new L.Proj.CRS(
   },
 );
 
-const map = L.map("map", { crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZoom: 26 });
+// Zoom and attribution controls are drawn by the UI.
+const map = L.map("map", {
+  crs, center: [46.8, 8.2], zoom: 16, minZoom: 14, maxZoom: 26, zoomControl: false, attributionControl: false,
+});
 const swisstopo = (layer, format = "jpeg", maxNativeZoom = 27) =>
   L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/2056/{z}/{x}/{y}.${format}`, {
-    attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
     maxZoom: map.getMaxZoom(), // Leaflet's default (18) would hide tiles below 50 m/px
     maxNativeZoom,
   });
 const baseLayers = {
-  "Map (grey)": swisstopo("ch.swisstopo.pixelkarte-grau"),
-  "Map (colour)": swisstopo("ch.swisstopo.pixelkarte-farbe"),
-  "Aerial (SWISSIMAGE)": swisstopo("ch.swisstopo.swissimage"),
+  grey: { name: "Swiss map (grey)", layer: swisstopo("ch.swisstopo.pixelkarte-grau") },
+  color: { name: "Swiss map (colour)", layer: swisstopo("ch.swisstopo.pixelkarte-farbe") },
+  photo: { name: "Aerial imagery", layer: swisstopo("ch.swisstopo.swissimage") },
   // swissALTI3D (2 m, Switzerland only) over swissALTIRegio, which also covers the surroundings.
-  "Relief (swissALTI3D)": L.layerGroup([
-    swisstopo("ch.swisstopo.swissaltiregio-reliefschattierung_multidirektional", "png", 26),
-    swisstopo("ch.swisstopo.swissalti3d-reliefschattierung", "png", 26),
-  ]),
+  relief: {
+    name: "Relief",
+    layer: L.layerGroup([
+      swisstopo("ch.swisstopo.swissaltiregio-reliefschattierung_multidirektional", "png", 26),
+      swisstopo("ch.swisstopo.swissalti3d-reliefschattierung", "png", 26),
+    ]),
+  },
 };
-baseLayers["Map (grey)"].addTo(map);
-L.control.layers(baseLayers, null, { position: "topleft" }).addTo(map);
+let activeLayer = "grey";
+baseLayers[activeLayer].layer.addTo(map);
 
 // ImageOverlay that displays a canvas instead of an <img>, so it can be redrawn without encoding.
 const CanvasOverlay = L.ImageOverlay.extend({
@@ -46,7 +52,44 @@ const CanvasOverlay = L.ImageOverlay.extend({
   },
 });
 
-const $ = (id) => document.getElementById(id);
+const DAM_COLOR = "#C2410C"; // matches the UI's --sf-dam and the dam cells in the overlay
+const OVERFLOW_COLOR = "#d0f"; // magenta: not used by roads or water on the swisstopo maps
+const MIN_LAKE_AREA = 40000; // m², ignore tiny slivers so they don't clutter the map
+
+// ---------------------------------------------------------------------------------------------
+// Coordinates
+
+function lv95ToLatLng([x, y]) {
+  return crs.unproject(L.point(x, y));
+}
+
+function latLngToLv95(latlng) {
+  const p = crs.project(latlng);
+  return [p.x, p.y];
+}
+
+// "E 2 683 600  N 1 257 800"
+function formatLv95(latlng) {
+  const group = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const [x, y] = latLngToLv95(latlng);
+  return `E ${group(x)}  N ${group(y)}`;
+}
+
+// Grid cell index under a map position, or -1 outside the grid / Switzerland.
+function cellAt(latlng) {
+  const [x, y] = latLngToLv95(latlng);
+  const c = Math.floor((x - dem.west) / dem.cellsize);
+  const r = Math.floor((dem.north - y) / dem.cellsize);
+  if (c < 0 || r < 0 || c >= dem.cols || r >= dem.rows) return -1;
+  const i = r * dem.cols + c;
+  return model.terrain_at(i) === 0 ? -1 : i;
+}
+
+function cellCenterLatLng(i) {
+  const r = (i / dem.cols) | 0;
+  const c = i - r * dem.cols;
+  return lv95ToLatLng([dem.west + (c + 0.5) * dem.cellsize, dem.north - (r + 0.5) * dem.cellsize]);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Height grid
@@ -69,55 +112,39 @@ async function loadDem() {
 // ---------------------------------------------------------------------------------------------
 // Dams
 
-let dams = []; // { pts: [[x, y], ...] LV95 metres, crest: metres a.s.l., line: L.Polyline }
-
-function toCell(x, y) {
-  return [Math.floor((x - dem.west) / dem.cellsize), Math.floor((dem.north - y) / dem.cellsize)];
-}
+let dams = []; // { id, name, pts: [[x, y], ...] LV95 metres, crest, groundMin, groundMax, line }
+let nextDamId = 1;
 
 const flatten = (pts) => Float64Array.from(pts.flat());
 
 function addDam(pts, crest) {
   const info = model.dam_info(flatten(pts));
-  const range = { min: info.terrain_min, max: info.terrain_max };
   const empty = info.cells === 0;
+  const dam = { pts, groundMin: info.terrain_min, groundMax: info.terrain_max };
   info.free();
-  if (empty) return;
-  if (crest === undefined) crest = range.max; // new dams reach the highest ground they cover
-  const dam = { pts, crest, range };
-  dam.line = L.polyline(pts.map(lv95ToLatLng), { color: "#c00", weight: 3 }).addTo(map);
+  if (empty) return null;
+  dam.id = nextDamId++;
+  dam.name = `Dam ${dam.id}`;
+  dam.crest = crest ?? dam.groundMax; // new dams reach the highest ground they cover
+  dam.line = L.polyline(pts.map(lv95ToLatLng), { color: DAM_COLOR, weight: 5 }).addTo(map);
+  dam.line.on("click", (e) => {
+    L.DomEvent.stop(e);
+    if (!ui.isDrawing) ui.select(dam.id);
+  });
   dams.push(dam);
+  return dam;
 }
 
-function removeDam(dam) {
+function removeDam(id) {
+  const dam = dams.find((d) => d.id === id);
+  if (!dam) return;
   map.removeLayer(dam.line);
   dams = dams.filter((d) => d !== dam);
   update();
 }
 
-function renderDamList() {
-  const box = $("dams");
-  box.innerHTML = "";
-  dams.forEach((dam, k) => {
-    const el = document.createElement("div");
-    el.className = "dam";
-    el.innerHTML = `
-      <div class="row">
-        <b>Dam ${k + 1}</b>
-        <label>crest <input type="number" step="1" value="${dam.crest}"> m</label>
-        <button title="Delete">✕</button>
-      </div>
-      <div class="info">terrain along dam ${dam.range.min}–${dam.range.max} m,
-        max height ${Math.max(0, dam.crest - dam.range.min)} m</div>`;
-    const input = el.querySelector("input");
-    input.addEventListener("change", () => {
-      const v = Math.round(Number(input.value));
-      if (Number.isFinite(v) && v > 0 && v < 65536) dam.crest = v;
-      update();
-    });
-    el.querySelector("button").addEventListener("click", () => removeDam(dam));
-    box.appendChild(el);
-  });
+function styleDamLines() {
+  for (const dam of dams) dam.line.setStyle({ weight: dam.id === ui.selected ? 7 : 5 });
 }
 
 // Dams are stored in the URL hash so a scenario can be shared as a link.
@@ -170,21 +197,39 @@ function update() {
   drawOverflows(lakes);
 
   const cellArea = dem.cellsize * dem.cellsize;
-  $("stats").textContent = dams.length
-    ? `Flooded ${((cells * cellArea) / 1e6).toFixed(1)} km², ` +
-      `additional water ${((volume * cellArea) / 1e9).toFixed(2)} km³ ` +
-      `(compute ${ms.toFixed(0)} ms, ${(model.region_cells() / 1e6).toFixed(1)}M cells upstream of dams)`
-    : "";
-  renderLakeList(lakes);
-  renderDamList();
+  ui.setResults({
+    areaKm2: dams.length ? (cells * cellArea) / 1e6 : null,
+    volumeKm3: dams.length ? (volume * cellArea) / 1e9 : null,
+    meta: dams.length
+      ? `${lakes.length} lake${lakes.length === 1 ? "" : "s"} · computed in ${ms.toFixed(0)} ms`
+      : "",
+  });
+  ui.setDams(dams.map((dam, k) => {
+    // Water held below the crest escapes elsewhere (e.g. around the dam's end); worth a note.
+    const lakeLevel = model.dam_lake_level(k);
+    const note = lakeLevel > 0 && lakeLevel < dam.crest
+      ? `Lake ${lakeLevel} m · water escapes ${dam.crest - lakeLevel} m below the crest`
+      : "";
+    return { id: dam.id, name: dam.name, crest: dam.crest, groundMin: dam.groundMin, groundMax: dam.groundMax, note };
+  }));
+  styleDamLines();
   saveHash();
+}
+
+// Coalesces updates to one per frame, e.g. while a crest slider is dragged: only the latest
+// value is computed, nothing queues up behind a slow compute.
+let updatePending = false;
+function scheduleUpdate() {
+  if (updatePending) return;
+  updatePending = true;
+  requestAnimationFrame(() => {
+    updatePending = false;
+    update();
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
 // Lakes and overflow paths
-
-const MIN_LAKE_AREA = 40000; // m², ignore tiny slivers so they don't clutter the map
-const OVERFLOW_COLOR = "#d0f"; // magenta: not used by roads or water on the swisstopo maps
 
 // Lakes as found by the model: 8-connected flooded cells sharing one level, each with its
 // overflow point (spill), pour cell, the dam it overflows (index into dams, or -1) and the
@@ -196,7 +241,6 @@ function readLakes() {
       cells: model.lake_cells(k),
       level: model.lake_level(k),
       spill: model.lake_spill(k),
-      pour: model.lake_pour(k),
       dam: model.lake_dam(k),
       toBorder: model.lake_drains_to_border(k),
       path: model.lake_path(k),
@@ -205,27 +249,15 @@ function readLakes() {
   return lakes;
 }
 
-function cellCenterLatLng(i) {
-  const r = (i / dem.cols) | 0;
-  const c = i - r * dem.cols;
-  return lv95ToLatLng([dem.west + (c + 0.5) * dem.cellsize, dem.north - (r + 0.5) * dem.cellsize]);
-}
-
 function overflowText(lake) {
-  if (lake.dam !== -1) return `overflows over dam ${lake.dam + 1}`;
+  if (lake.dam !== -1) return `overflows over ${dams[lake.dam].name}`;
   if (lake.toBorder) return "drains across the border";
-  return `overflows over terrain at E ${lv95Of(lake.pour).join(" N ")} (not over a dam)`;
-}
-
-function lv95Of(i) {
-  const r = (i / dem.cols) | 0;
-  const c = i - r * dem.cols;
-  return [Math.round(dem.west + (c + 0.5) * dem.cellsize), Math.round(dem.north - (r + 0.5) * dem.cellsize)];
+  return "flows around the dam over terrain";
 }
 
 function drawOverflows(lakes) {
   overflowLayer.clearLayers();
-  lakes.forEach((lake, k) => {
+  for (const lake of lakes) {
     // White casing under an animated dashed line, so it stands out from roads on the colour map.
     const latlngs = Array.from(lake.path, cellCenterLatLng);
     L.polyline(latlngs, { color: "#fff", weight: 7, opacity: 0.85, interactive: false }).addTo(overflowLayer);
@@ -235,106 +267,69 @@ function drawOverflows(lakes) {
     L.circleMarker(cellCenterLatLng(lake.spill), {
       radius: 7, color: "#fff", weight: 3, fillColor: OVERFLOW_COLOR, fillOpacity: 1,
     })
-      .bindTooltip(`Lake ${k + 1} at ${lake.level} m ${overflowText(lake)}`)
+      .bindTooltip(`Lake at ${lake.level} m ${overflowText(lake)}`)
       .addTo(overflowLayer);
-  });
-}
-
-function renderLakeList(lakes) {
-  const cellArea = (dem.cellsize * dem.cellsize) / 1e6;
-  $("lakes").innerHTML = lakes
-    .map((lake, k) => `<div>Lake ${k + 1}: ${lake.level} m, ${(lake.cells * cellArea).toFixed(1)} km², ` +
-      `${overflowText(lake)}</div>`)
-    .join("");
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Map interaction
+// UI
 
-function lv95ToLatLng([x, y]) {
-  return crs.unproject(L.point(x, y));
-}
-
-function latLngToLv95(latlng) {
-  const p = crs.project(latlng);
-  return [p.x, p.y];
-}
-
-let drawing = null; // { pts, line }
-
-function startDrawing() {
-  if (drawing) return;
-  drawing = { pts: [], line: L.polyline([], { color: "#c00", weight: 2, dashArray: "4 4" }).addTo(map) };
-  map.doubleClickZoom.disable();
-  $("map").classList.add("drawing");
-  $("draw").disabled = true;
-}
-
-function stopDrawing(commit) {
-  if (!drawing) return;
-  map.removeLayer(drawing.line);
-  if (commit && drawing.pts.length >= 2) {
-    addDam(drawing.pts);
-  }
-  drawing = null;
-  map.doubleClickZoom.enable();
-  $("map").classList.remove("drawing");
-  $("draw").disabled = false;
-  if (commit) update();
-}
-
-map.on("click", (e) => {
-  if (!drawing) return;
-  drawing.pts.push(latLngToLv95(e.latlng));
-  drawing.line.setLatLngs(drawing.pts.map(lv95ToLatLng));
+const ui = SwissFloodUI.mount(map, {
+  layers: Object.entries(baseLayers).map(([id, { name }]) => ({ id, name })),
+  activeLayer,
+  onLayerChange(id) {
+    map.removeLayer(baseLayers[activeLayer].layer);
+    activeLayer = id;
+    baseLayers[id].layer.addTo(map); // tile pane, always below the flood overlay
+  },
+  onShare() {
+    navigator.clipboard?.writeText(location.href);
+  },
+  onDrawFinish(latlngs) {
+    if (!model) return;
+    const dam = addDam(latlngs.map(latLngToLv95));
+    if (!dam) return; // entirely outside Switzerland
+    update();
+    ui.select(dam.id);
+  },
+  onCrestChange(id, crest, final) {
+    const dam = dams.find((d) => d.id === id);
+    if (!dam) return;
+    dam.crest = Math.max(1, Math.min(65535, Math.round(crest)));
+    if (final) update();
+    else scheduleUpdate(); // slider drag: follow live, one compute per frame at most
+  },
+  onDelete: removeDam,
+  onZoomTo(id) {
+    const dam = dams.find((d) => d.id === id);
+    if (dam) map.fitBounds(dam.line.getBounds(), { padding: [80, 80], maxZoom: 21 });
+  },
+  onSelect: styleDamLines,
+  getGround(latlng) {
+    if (!model) return null;
+    const i = cellAt(latlng);
+    return i === -1 ? null : model.terrain_at(i);
+  },
+  getWater(latlng) {
+    if (!model) return null;
+    const i = cellAt(latlng);
+    if (i === -1) return null;
+    const level = model.level_at(i);
+    return level > model.base_level_at(i) ? { level, depth: level - model.terrain_at(i) } : null;
+  },
+  formatCoord: formatLv95,
 });
-
-map.on("dblclick", () => {
-  if (!drawing) return;
-  // The double-click also fired two clicks at (nearly) the same spot; drop the duplicate.
-  const p = drawing.pts;
-  if (p.length >= 2) {
-    const [a, b] = [p[p.length - 1], p[p.length - 2]];
-    if (Math.hypot(a[0] - b[0], a[1] - b[1]) < dem.cellsize) p.pop();
-  }
-  stopDrawing(true);
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") stopDrawing(false);
-  if (e.key === "Enter") stopDrawing(true);
-});
-
-map.on("mousemove", (e) => {
-  if (!model) return;
-  const [x, y] = latLngToLv95(e.latlng);
-  if (drawing && drawing.pts.length) {
-    drawing.line.setLatLngs([...drawing.pts, [x, y]].map(lv95ToLatLng));
-  }
-  const [c, r] = toCell(x, y);
-  if (c < 0 || r < 0 || c >= dem.cols || r >= dem.rows || model.terrain_at(r * dem.cols + c) === 0) {
-    $("cursor").textContent = "";
-    return;
-  }
-  const i = r * dem.cols + c;
-  const terrain = model.terrain_at(i), level = model.level_at(i);
-  let text = `E ${Math.round(x)} N ${Math.round(y)} · terrain ${terrain} m`;
-  if (level > model.base_level_at(i)) text += ` · water ${level} m (depth ${level - terrain} m)`;
-  $("cursor").textContent = text;
-});
-
-$("draw").addEventListener("click", startDrawing);
 
 (async () => {
+  ui.setResults({ meta: "Loading height map…" });
   try {
     await loadDem();
     initRender();
     loadHash();
     update();
-    $("status").textContent = "";
-    $("draw").disabled = false;
   } catch (e) {
     console.error(e);
-    $("status").textContent = "Failed to load height map: " + e.message;
+    ui.setResults({ meta: "Failed to load height map: " + e.message });
   }
 })();

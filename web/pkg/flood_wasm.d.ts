@@ -38,6 +38,11 @@ export class FloodModel {
      * `xy`: LV95 coordinates as [x0, y0, x1, y1, ...].
      */
     dam_info(xy: Float64Array): DamInfo;
+    /**
+     * Highest water level touching dam `k` (in `add_dam` order) after compute, 0 if it holds
+     * no water. Below the crest means the water escapes elsewhere, e.g. around the dam's end.
+     */
+    dam_lake_level(k: number): number;
     lake_cells(k: number): number;
     lake_count(): number;
     /**
@@ -116,6 +121,7 @@ export interface InitOutput {
     readonly floodmodel_compute: (a: number) => number;
     readonly floodmodel_dam_height_ptr: (a: number) => number;
     readonly floodmodel_dam_info: (a: number, b: number, c: number) => number;
+    readonly floodmodel_dam_lake_level: (a: number, b: number) => number;
     readonly floodmodel_lake_cells: (a: number, b: number) => number;
     readonly floodmodel_lake_count: (a: number) => number;
     readonly floodmodel_lake_dam: (a: number, b: number) => number;

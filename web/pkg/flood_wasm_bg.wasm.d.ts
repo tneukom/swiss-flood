@@ -21,6 +21,7 @@ export const floodmodel_cols: (a: number) => number;
 export const floodmodel_compute: (a: number) => number;
 export const floodmodel_dam_height_ptr: (a: number) => number;
 export const floodmodel_dam_info: (a: number, b: number, c: number) => number;
+export const floodmodel_dam_lake_level: (a: number, b: number) => number;
 export const floodmodel_lake_cells: (a: number, b: number) => number;
 export const floodmodel_lake_count: (a: number) => number;
 export const floodmodel_lake_dam: (a: number, b: number) => number;

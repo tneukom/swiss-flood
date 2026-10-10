@@ -131,6 +131,16 @@ export class FloodModel {
         return DamInfo.__wrap(ret);
     }
     /**
+     * Highest water level touching dam `k` (in `add_dam` order) after compute, 0 if it holds
+     * no water. Below the crest means the water escapes elsewhere, e.g. around the dam's end.
+     * @param {number} k
+     * @returns {number}
+     */
+    dam_lake_level(k) {
+        const ret = wasm.floodmodel_dam_lake_level(this.__wbg_ptr, k);
+        return ret;
+    }
+    /**
      * @param {number} k
      * @returns {number}
      */

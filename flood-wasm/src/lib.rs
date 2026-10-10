@@ -41,8 +41,8 @@ use wasm_bindgen::prelude::*;
 
 /// Depth at which the colour ramp reaches its darkest blue.
 const RAMP_MAX_DEPTH: f64 = 200.0;
-/// Dam cells in the overlay, as RGBA bytes in memory order (little-endian u32 ABGR).
-const DAM_COLOR: u32 = u32::from_le_bytes([220, 0, 0, 255]);
+/// Dam cells in the overlay (#C2410C, the UI's dam colour), as RGBA bytes in memory order.
+const DAM_COLOR: u32 = u32::from_le_bytes([0xC2, 0x41, 0x0C, 255]);
 /// Values of `FloodModel::mark`.
 const REGION: u8 = 1;
 const SEED: u8 = 2;
@@ -50,6 +50,8 @@ const SEED: u8 = 2;
 struct Dam {
     cells: Vec<u32>,
     crest: u16,
+    /// Highest water level of the flooded cells touching the dam after compute, 0 if none.
+    lake_level: u16,
 }
 
 struct Lake {
@@ -165,7 +167,7 @@ impl FloodModel {
     /// Dams are numbered in the order they're added, which `lake_dam` refers to.
     pub fn add_dam(&mut self, xy: &[f64], crest: u16) {
         let cells = self.dam_cells(xy);
-        self.dams.push(Dam { cells, crest });
+        self.dams.push(Dam { cells, crest, lake_level: 0 });
     }
 
     /// Floods with the current dams, renders the overlay and finds lakes. Only recomputes the
@@ -262,6 +264,7 @@ impl FloodModel {
             };
         }
         self.find_lakes();
+        self.find_dam_lake_levels();
         stats
     }
 
@@ -296,6 +299,12 @@ impl FloodModel {
 
     pub fn base_level_at(&self, i: u32) -> u16 {
         self.base_level[i as usize]
+    }
+
+    /// Highest water level touching dam `k` (in `add_dam` order) after compute, 0 if it holds
+    /// no water. Below the crest means the water escapes elsewhere, e.g. around the dam's end.
+    pub fn dam_lake_level(&self, k: u32) -> u16 {
+        self.dams[k as usize].lake_level
     }
 
     pub fn lake_count(&self) -> u32 {
@@ -404,6 +413,25 @@ impl FloodModel {
         cells.dedup();
         cells.retain(|&i| self.terrain[i as usize] != 0);
         cells
+    }
+
+    fn find_dam_lake_levels(&mut self) {
+        let (cols, rows) = (self.cols, self.rows);
+        for d in 0..self.dams.len() {
+            let mut lake_level = 0;
+            for &i in &self.dams[d].cells {
+                let (r, c) = (i as usize / cols, i as usize % cols);
+                for rr in r.saturating_sub(1)..=(r + 1).min(rows - 1) {
+                    for cc in c.saturating_sub(1)..=(c + 1).min(cols - 1) {
+                        let j = rr * cols + cc;
+                        if self.is_flooded(j) {
+                            lake_level = lake_level.max(self.level[j]);
+                        }
+                    }
+                }
+            }
+            self.dams[d].lake_level = lake_level;
+        }
     }
 
     fn is_flooded(&self, i: usize) -> bool {
@@ -665,6 +693,7 @@ mod tests {
         assert_eq!(m.lake_count(), 1);
         assert_eq!(m.lake_level(0), 12);
         assert_eq!(m.lake_dam(0), -1);
+        assert_eq!(m.dam_lake_level(0), 12);
     }
 
     #[test]
@@ -685,6 +714,7 @@ mod tests {
         assert_eq!(m.lake_count(), 1);
         assert_eq!(m.lake_level(0), 9);
         assert_eq!(m.lake_dam(0), 0);
+        assert_eq!(m.dam_lake_level(0), 9);
         // The overflow path starts at the lake edge just above the dam and runs to the border.
         let path = m.lake_path(0);
         assert_eq!(path[0], 3 * 5 + 2);

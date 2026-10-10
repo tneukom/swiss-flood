@@ -2,32 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Swiss Flood</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="ui/swissflood-ui.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
+  <script src="ui/swissflood-ui.js"></script>
   <style>
-    html, body { margin: 0; height: 100%; font: 14px/1.4 system-ui, sans-serif; }
-    #map { position: absolute; inset: 0; }
-    #map.drawing { cursor: crosshair; }
     .flood-layer { image-rendering: pixelated; }
-    #panel {
-      position: absolute; top: 10px; right: 10px; z-index: 1000; width: 280px;
-      max-height: calc(100% - 40px); overflow: auto;
-      background: rgba(255, 255, 255, 0.95); border-radius: 6px; padding: 10px 12px;
-      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
-    }
-    #panel h1 { font-size: 16px; margin: 0 0 8px; }
-    #panel button { font: inherit; padding: 4px 10px; cursor: pointer; }
-    #panel .hint { color: #555; font-size: 12px; margin: 6px 0; }
-    .dam { border-top: 1px solid #ddd; padding: 6px 0; }
-    .dam .row { display: flex; align-items: center; gap: 6px; }
-    .dam input { width: 70px; font: inherit; }
-    .dam .info { color: #555; font-size: 12px; }
-    #stats, #lakes, #cursor { font-size: 12px; color: #333; margin-top: 6px; font-variant-numeric: tabular-nums; }
-    #status { color: #a00; }
     /* Dashes move from the overflow point towards the border. */
     .overflow-flow { animation: overflow-flow 0.8s linear infinite; }
     @keyframes overflow-flow { to { stroke-dashoffset: -16; } }
@@ -35,16 +21,6 @@
 </head>
 <body>
   <div id="map"></div>
-  <div id="panel">
-    <h1>Swiss Flood</h1>
-    <div id="status">Loading height map…</div>
-    <button id="draw" disabled>Draw dam</button>
-    <div class="hint" id="drawHint">Click points on the map, double-click or Enter to finish, Esc to cancel.</div>
-    <div id="dams"></div>
-    <div id="stats"></div>
-    <div id="lakes"></div>
-    <div id="cursor"></div>
-  </div>
   <script type="module" src="flood.js"></script>
 </body>
 </html>
