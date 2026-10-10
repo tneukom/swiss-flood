@@ -1,4 +1,6 @@
-"use strict";
+// Map UI. The height grid, flood, overlay colouring and lake search live in the Rust/WASM module
+// (flood-wasm/, built into pkg/); this file handles Leaflet, dam drawing and the panel.
+import init, { FloodModel } from "./pkg/flood_wasm.js";
 
 // LV95 (EPSG:2056) map with swisstopo tiles, so the LV03/LV95 height grid is axis-aligned.
 const crs = new L.Proj.CRS(
@@ -50,101 +52,18 @@ const $ = (id) => document.getElementById(id);
 // Height grid
 
 let dem; // { cols, rows, west, north, cellsize } in LV95
-let terrain; // Uint16Array, metres, 0 = outside Switzerland
-let outlets; // Int32Array of valid cells adjacent to NODATA or the grid border
-let baseLevel; // water level without dams (natural depressions filled)
+let wasm; // WASM exports, for wasm.memory
+let model; // FloodModel: terrain, levels, dams, overlay pixels and lakes, all in WASM memory
 
 async function loadDem() {
-  const header = await (await fetch("data/dem.json")).json();
-  const compressed = new Uint8Array(await (await fetch("data/dem.bin.zst")).arrayBuffer());
-  const planes = fzstd.decompress(compressed);
-  const n = header.cols * header.rows;
-  terrain = new Uint16Array(n);
-  let prev = 0;
-  for (let i = 0; i < n; i++) {
-    prev = (prev + (planes[i] | (planes[n + i] << 8))) & 0xffff;
-    terrain[i] = prev;
-  }
+  const [header, compressed] = await Promise.all([
+    fetch("data/dem.json").then((r) => r.json()),
+    fetch("data/dem.bin.zst").then((r) => r.arrayBuffer()),
+    init().then((exports) => (wasm = exports)),
+  ]);
   // LV03 -> LV95 is a pure offset.
   dem = { ...header, west: header.west + 2000000, north: header.north + 1000000 };
-  outlets = findOutlets();
-}
-
-function findOutlets() {
-  const { cols, rows } = dem;
-  const list = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const i = r * cols + c;
-      if (terrain[i] === 0) continue;
-      let edge = r === 0 || c === 0 || r === rows - 1 || c === cols - 1;
-      for (let dr = -1; dr <= 1 && !edge; dr++) {
-        for (let dc = -1; dc <= 1 && !edge; dc++) {
-          if (terrain[i + dr * cols + dc] === 0) edge = true;
-        }
-      }
-      if (edge) list.push(i);
-    }
-  }
-  return Int32Array.from(list);
-}
-
-// ---------------------------------------------------------------------------------------------
-// Priority-flood (Barnes et al.) with a bucket queue: heights are integer metres, so each
-// bucket is a FIFO array of cells and the whole fill is a single linear pass. FIFO makes the
-// fill spread evenly across flat areas, so drainage paths across them are short and straight.
-// Buckets are growable Int32Arrays kept between runs: reading them is sequential, which is ~1.5×
-// faster than linked lists through a per-cell next[] (see flood-bench/).
-// parent (optional) receives the neighbour each cell was reached from, -1 for outlets. Following
-// parents always leads downhill (non-increasing level) to an outlet, i.e. where the water drains.
-
-const buckets = new Array(65536).fill(null);
-const bucketSize = new Int32Array(65536);
-
-function pushBucket(v, i) {
-  let bucket = buckets[v];
-  const size = bucketSize[v];
-  if (bucket === null || size === bucket.length) {
-    const grown = new Int32Array(bucket === null ? 1024 : 2 * bucket.length);
-    if (bucket !== null) grown.set(bucket);
-    bucket = buckets[v] = grown;
-  }
-  bucket[size] = i;
-  bucketSize[v] = size + 1;
-}
-
-function flood(height, level, parent) {
-  const { cols, rows } = dem;
-  level.fill(0); // 0 = not yet visited
-  bucketSize.fill(0);
-  for (const i of outlets) {
-    level[i] = height[i];
-    if (parent) parent[i] = -1;
-    pushBucket(height[i], i);
-  }
-  for (let b = 1; b < 65536; b++) {
-    // Cells at the current level are appended to bucket b while it's read (which may replace it
-    // with a grown copy), so re-read buckets[b] and bucketSize[b] each iteration.
-    for (let k = 0; k < bucketSize[b]; k++) {
-      const i = buckets[b][k];
-      const r = (i / cols) | 0;
-      const c = i - r * cols;
-      for (let dr = -1; dr <= 1; dr++) {
-        const rr = r + dr;
-        if (rr < 0 || rr >= rows) continue;
-        for (let dc = -1; dc <= 1; dc++) {
-          const cc = c + dc;
-          if (cc < 0 || cc >= cols) continue;
-          const j = rr * cols + cc;
-          if (level[j] !== 0 || height[j] === 0) continue;
-          const v = height[j] > b ? height[j] : b;
-          level[j] = v;
-          if (parent) parent[j] = i;
-          pushBucket(v, j);
-        }
-      }
-    }
-  }
+  model = new FloodModel(new Uint8Array(compressed), dem.cols, dem.rows, dem.west, dem.north, dem.cellsize);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -156,50 +75,16 @@ function toCell(x, y) {
   return [Math.floor((x - dem.west) / dem.cellsize), Math.floor((dem.north - y) / dem.cellsize)];
 }
 
-// 4-connected line (Zingl): 4-connected barriers are watertight against the 8-connected flood.
-function rasterLine(c0, r0, c1, r1, visit) {
-  const dx = Math.abs(c1 - c0), sx = c0 < c1 ? 1 : -1;
-  const dy = -Math.abs(r1 - r0), sy = r0 < r1 ? 1 : -1;
-  let err = dx + dy;
-  for (;;) {
-    visit(c0, r0);
-    if (c0 === c1 && r0 === r1) break;
-    const e2 = 2 * err;
-    if (e2 - dy > dx - e2) { err += dy; c0 += sx; } else { err += dx; r0 += sy; }
-  }
-}
-
-function damCells(pts) {
-  const cells = new Set();
-  for (let k = 0; k + 1 < pts.length; k++) {
-    const [c0, r0] = toCell(...pts[k]);
-    const [c1, r1] = toCell(...pts[k + 1]);
-    rasterLine(c0, r0, c1, r1, (c, r) => {
-      if (c >= 0 && r >= 0 && c < dem.cols && r < dem.rows) cells.add(r * dem.cols + c);
-    });
-  }
-  if (pts.length === 1) {
-    const [c, r] = toCell(...pts[0]);
-    cells.add(r * dem.cols + c);
-  }
-  return [...cells].filter((i) => terrain[i] !== 0);
-}
-
-function terrainRange(cells) {
-  let min = Infinity, max = -Infinity;
-  for (const i of cells) {
-    min = Math.min(min, terrain[i]);
-    max = Math.max(max, terrain[i]);
-  }
-  return { min, max };
-}
+const flatten = (pts) => Float64Array.from(pts.flat());
 
 function addDam(pts, crest) {
-  const cells = damCells(pts);
-  if (cells.length === 0) return;
-  const range = terrainRange(cells);
+  const info = model.dam_info(flatten(pts));
+  const range = { min: info.terrain_min, max: info.terrain_max };
+  const empty = info.cells === 0;
+  info.free();
+  if (empty) return;
   if (crest === undefined) crest = Math.min(range.max, range.min + 100);
-  const dam = { pts, crest, cells, range };
+  const dam = { pts, crest, range };
   dam.line = L.polyline(pts.map(lv95ToLatLng), { color: "#c00", weight: 3 }).addTo(map);
   dams.push(dam);
 }
@@ -253,24 +138,13 @@ function loadHash() {
 // ---------------------------------------------------------------------------------------------
 // Flood computation and rendering
 
-let damHeight, level, parent, lakeId, isDam, canvas, ctx, image, pixels, overflowLayer;
+let canvas, ctx, overflowLayer;
 
 function initRender() {
-  const n = terrain.length;
-  damHeight = new Uint16Array(n);
-  level = new Uint16Array(n);
-  parent = new Int32Array(n);
-  lakeId = new Int32Array(n);
-  baseLevel = new Uint16Array(n);
-  isDam = new Uint8Array(n);
-  flood(terrain, baseLevel);
-
   canvas = document.createElement("canvas");
   canvas.width = dem.cols;
   canvas.height = dem.rows;
   ctx = canvas.getContext("2d");
-  image = ctx.createImageData(dem.cols, dem.rows);
-  pixels = new Uint32Array(image.data.buffer);
 
   const nw = lv95ToLatLng([dem.west, dem.north]);
   const se = lv95ToLatLng([dem.west + dem.cols * dem.cellsize, dem.north - dem.rows * dem.cellsize]);
@@ -278,56 +152,27 @@ function initRender() {
   overflowLayer = L.layerGroup().addTo(map);
 }
 
-// Depth colour ramp: light cyan (shallow) to dark blue (>= 200 m), as ABGR little-endian uint32.
-const RAMP = (() => {
-  const ramp = new Uint32Array(256);
-  const a = [170, 230, 255], b = [8, 40, 140];
-  for (let k = 0; k < 256; k++) {
-    const t = Math.sqrt(k / 255);
-    const [r, g, bl] = a.map((v, j) => Math.round(v + (b[j] - v) * t));
-    ramp[k] = (255 << 24) | (bl << 16) | (g << 8) | r;
-  }
-  return ramp;
-})();
-const DAM_COLOR = (255 << 24) | (0 << 16) | (0 << 8) | 220;
-
-let stats = {};
-
 function update() {
+  model.clear_dams();
+  for (const dam of dams) model.add_dam(flatten(dam.pts), dam.crest);
   const t0 = performance.now();
-  damHeight.set(terrain);
-  isDam.fill(0);
-  for (const dam of dams) {
-    for (const i of dam.cells) {
-      if (dam.crest > damHeight[i]) damHeight[i] = dam.crest;
-      isDam[i] = 1;
-    }
-  }
-  flood(damHeight, level, parent);
-  const t1 = performance.now();
+  const result = model.compute();
+  const ms = performance.now() - t0;
+  const cells = result.flooded_cells, volume = result.volume_cell_metres;
+  result.free();
 
-  let cells = 0, volume = 0;
-  for (let i = 0; i < pixels.length; i++) {
-    if (isDam[i]) {
-      pixels[i] = DAM_COLOR;
-    } else if (level[i] > baseLevel[i]) {
-      const depth = level[i] - terrain[i];
-      pixels[i] = RAMP[Math.min(255, Math.round((depth * 255) / 200))];
-      cells++;
-      volume += level[i] - baseLevel[i];
-    } else {
-      pixels[i] = 0;
-    }
-  }
-  ctx.putImageData(image, 0, 0);
-  const lakes = findLakes().filter((lake) => lake.cells * dem.cellsize ** 2 >= MIN_LAKE_AREA);
+  // View the overlay pixels in WASM memory directly. Created after compute(): if WASM memory
+  // grew, older views are detached.
+  const n = dem.cols * dem.rows;
+  const pixels = new Uint8ClampedArray(wasm.memory.buffer, model.rgba_ptr(), 4 * n);
+  ctx.putImageData(new ImageData(pixels, dem.cols, dem.rows), 0, 0);
+  const lakes = readLakes().filter((lake) => lake.cells * dem.cellsize ** 2 >= MIN_LAKE_AREA);
   drawOverflows(lakes);
 
   const cellArea = dem.cellsize * dem.cellsize;
-  stats = { area: (cells * cellArea) / 1e6, volume: (volume * cellArea) / 1e9, ms: t1 - t0 };
   $("stats").textContent = dams.length
-    ? `Flooded ${stats.area.toFixed(1)} km², additional water ${stats.volume.toFixed(2)} km³ ` +
-      `(flood ${stats.ms.toFixed(0)} ms)`
+    ? `Flooded ${((cells * cellArea) / 1e6).toFixed(1)} km², ` +
+      `additional water ${((volume * cellArea) / 1e9).toFixed(2)} km³ (compute ${ms.toFixed(0)} ms)`
     : "";
   renderLakeList(lakes);
   renderDamList();
@@ -340,64 +185,21 @@ function update() {
 const MIN_LAKE_AREA = 40000; // m², ignore tiny slivers so they don't clutter the map
 const OVERFLOW_COLOR = "#d0f"; // magenta: not used by roads or water on the swisstopo maps
 
-function isFlooded(i) {
-  return !isDam[i] && level[i] > baseLevel[i];
-}
-
-// Groups flooded cells into lakes (8-connected; all cells of a lake share one level) and traces
-// where each one drains. Following parents from a lake cell stays at lake level (across the lake,
-// shore cells exactly at lake level, dam crests) until the pour cell, after which it descends.
-// The overflow point is the last lake cell before the pour cell; the cells between them tell
-// whether the water goes over a dam, and the rest of the chain is the path to the border.
-function findLakes() {
-  const { cols, rows } = dem;
-  lakeId.fill(-1);
+// Lakes as found by the model: 8-connected flooded cells sharing one level, each with its
+// overflow point (spill), pour cell, the dam it overflows (index into dams, or -1) and the
+// drainage path from the overflow point to the border.
+function readLakes() {
   const lakes = [];
-  const stack = [];
-  for (let s = 0; s < level.length; s++) {
-    if (lakeId[s] !== -1 || !isFlooded(s)) continue;
-    const id = lakes.length;
-    let cells = 0;
-    lakeId[s] = id;
-    stack.push(s);
-    while (stack.length) {
-      const i = stack.pop();
-      cells++;
-      const r = (i / cols) | 0;
-      const c = i - r * cols;
-      for (let dr = -1; dr <= 1; dr++) {
-        const rr = r + dr;
-        if (rr < 0 || rr >= rows) continue;
-        for (let dc = -1; dc <= 1; dc++) {
-          const cc = c + dc;
-          if (cc < 0 || cc >= cols) continue;
-          const j = rr * cols + cc;
-          if (lakeId[j] === -1 && isFlooded(j)) {
-            lakeId[j] = id;
-            stack.push(j);
-          }
-        }
-      }
-    }
-    lakes.push({ start: s, cells, level: level[s] });
-  }
-
-  for (const lake of lakes) {
-    const id = lakeId[lake.start];
-    let spill = lake.start, pour = lake.start;
-    while (parent[pour] !== -1 && level[parent[pour]] === lake.level) {
-      pour = parent[pour];
-      if (lakeId[pour] === id) spill = pour;
-    }
-    lake.spill = spill;
-    lake.pour = pour;
-    lake.dam = -1;
-    for (let j = spill; ; j = parent[j]) {
-      if (isDam[j]) lake.dam = dams.findIndex((d) => d.cells.includes(j));
-      if (j === pour) break;
-    }
-    lake.path = [];
-    for (let j = spill; j !== -1; j = parent[j]) lake.path.push(j);
+  for (let k = 0; k < model.lake_count(); k++) {
+    lakes.push({
+      cells: model.lake_cells(k),
+      level: model.lake_level(k),
+      spill: model.lake_spill(k),
+      pour: model.lake_pour(k),
+      dam: model.lake_dam(k),
+      toBorder: model.lake_drains_to_border(k),
+      path: model.lake_path(k),
+    });
   }
   return lakes;
 }
@@ -410,7 +212,7 @@ function cellCenterLatLng(i) {
 
 function overflowText(lake) {
   if (lake.dam !== -1) return `overflows over dam ${lake.dam + 1}`;
-  if (parent[lake.pour] === -1) return "drains across the border";
+  if (lake.toBorder) return "drains across the border";
   return `overflows over terrain at E ${lv95Of(lake.pour).join(" N ")} (not over a dam)`;
 }
 
@@ -424,7 +226,7 @@ function drawOverflows(lakes) {
   overflowLayer.clearLayers();
   lakes.forEach((lake, k) => {
     // White casing under an animated dashed line, so it stands out from roads on the colour map.
-    const latlngs = lake.path.map(cellCenterLatLng);
+    const latlngs = Array.from(lake.path, cellCenterLatLng);
     L.polyline(latlngs, { color: "#fff", weight: 7, opacity: 0.85, interactive: false }).addTo(overflowLayer);
     L.polyline(latlngs, {
       color: OVERFLOW_COLOR, weight: 3, dashArray: "10 6", className: "overflow-flow", interactive: false,
@@ -503,19 +305,20 @@ document.addEventListener("keydown", (e) => {
 });
 
 map.on("mousemove", (e) => {
-  if (!dem) return;
+  if (!model) return;
   const [x, y] = latLngToLv95(e.latlng);
   if (drawing && drawing.pts.length) {
     drawing.line.setLatLngs([...drawing.pts, [x, y]].map(lv95ToLatLng));
   }
   const [c, r] = toCell(x, y);
-  if (c < 0 || r < 0 || c >= dem.cols || r >= dem.rows || terrain[r * dem.cols + c] === 0) {
+  if (c < 0 || r < 0 || c >= dem.cols || r >= dem.rows || model.terrain_at(r * dem.cols + c) === 0) {
     $("cursor").textContent = "";
     return;
   }
   const i = r * dem.cols + c;
-  let text = `E ${Math.round(x)} N ${Math.round(y)} · terrain ${terrain[i]} m`;
-  if (level[i] > baseLevel[i]) text += ` · water ${level[i]} m (depth ${level[i] - terrain[i]} m)`;
+  const terrain = model.terrain_at(i), level = model.level_at(i);
+  let text = `E ${Math.round(x)} N ${Math.round(y)} · terrain ${terrain} m`;
+  if (level > model.base_level_at(i)) text += ` · water ${level} m (depth ${level - terrain} m)`;
   $("cursor").textContent = text;
 });
 

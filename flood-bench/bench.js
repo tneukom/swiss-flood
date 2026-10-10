@@ -1,32 +1,44 @@
-// Runs flood() from web/flood.js unchanged in Node, for comparison with the Rust port.
+// Benchmarks the JS reference flood (flood_reference.js) and the WASM module (web/pkg) in Node,
+// and checks that both produce the same water levels.
 //
 //     node bench.js [data dir, default ../web/data]
+//
+// Times: JS = flood only; WASM = compute(), i.e. flood + overlay colouring + lake search.
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 
 const dir = process.argv[2] || path.join(__dirname, "../web/data");
-const src = fs.readFileSync(path.join(__dirname, "../web/flood.js"), "utf8");
+const header = JSON.parse(fs.readFileSync(path.join(dir, "dem.json"), "utf8"));
+const compressed = fs.readFileSync(path.join(dir, "dem.bin.zst"));
+const { cols, rows } = header;
+const n = cols * rows;
 
-// Extract the flood section (bucket queue + flood()) and compile it as a closure, so its
-// variables stay locals; eval at global scope would make them slow globals.
-const start = src.indexOf("// Priority-flood");
-const end = src.indexOf("// ----", start);
+function time(label, f) {
+  f(); // warm-up
+  const times = [];
+  for (let k = 0; k < 5; k++) {
+    const t = performance.now();
+    f();
+    times.push(performance.now() - t);
+  }
+  console.log(`${cols}x${rows}: ${label} ${Math.min(...times).toFixed(0)}–${Math.max(...times).toFixed(0)} ms`);
+}
+
+// JS reference, compiled as a closure so its variables stay locals (eval at global scope would
+// make them slow globals).
 const env = {};
-const flood = new Function("env", `"use strict"; let dem, outlets; ${src.slice(start, end)}
+const jsFlood = new Function("env", `let dem, outlets;
+  ${fs.readFileSync(path.join(__dirname, "flood_reference.js"), "utf8")}
   return (h, l, p) => { dem = env.dem; outlets = env.outlets; flood(h, l, p); };`)(env);
 
-const { cols, rows } = JSON.parse(fs.readFileSync(path.join(dir, "dem.json"), "utf8"));
-const planes = zlib.zstdDecompressSync(fs.readFileSync(path.join(dir, "dem.bin.zst")));
-const n = cols * rows;
+const planes = zlib.zstdDecompressSync(compressed);
 const terrain = new Uint16Array(n);
-let prev = 0;
-for (let i = 0; i < n; i++) {
+for (let i = 0, prev = 0; i < n; i++) {
   prev = (prev + (planes[i] | (planes[n + i] << 8))) & 0xffff;
   terrain[i] = prev;
 }
-
 const outlets = [];
 for (let r = 0; r < rows; r++) {
   for (let c = 0; c < cols; c++) {
@@ -41,14 +53,21 @@ for (let r = 0; r < rows; r++) {
 }
 env.dem = { cols, rows };
 env.outlets = Int32Array.from(outlets);
+const jsLevel = new Uint16Array(n);
+const jsParent = new Int32Array(n);
+time("JS flood", () => jsFlood(terrain, jsLevel, jsParent));
 
-const level = new Uint16Array(n);
-const parent = new Int32Array(n);
-flood(terrain, level, parent); // warm-up
-const times = [];
-for (let k = 0; k < 5; k++) {
+(async () => {
+  const { initSync, FloodModel } = await import(path.join(__dirname, "../web/pkg/flood_wasm.js"));
+  const wasm = initSync({ module: fs.readFileSync(path.join(__dirname, "../web/pkg/flood_wasm_bg.wasm")) });
   const t = performance.now();
-  flood(terrain, level, parent);
-  times.push(performance.now() - t);
-}
-console.log(`${cols}x${rows}: JS flood ${Math.min(...times).toFixed(0)}–${Math.max(...times).toFixed(0)} ms`);
+  const model = new FloodModel(compressed, cols, rows, header.west + 2000000, header.north + 1000000, header.cellsize);
+  console.log(`WASM load (decompress + decode + outlets + baseline flood): ${(performance.now() - t).toFixed(0)} ms`);
+  time("WASM compute", () => model.compute());
+
+  // Without dams the level is the plain flood of the terrain, so it must match the JS exactly.
+  const wasmLevel = new Uint16Array(wasm.memory.buffer, model.level_ptr(), n);
+  let diff = 0;
+  for (let i = 0; i < n; i++) if (wasmLevel[i] !== jsLevel[i]) diff++;
+  console.log(`levels differing between JS and WASM: ${diff}`);
+})();

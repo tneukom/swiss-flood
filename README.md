@@ -12,6 +12,18 @@ Turns the swisstopo DHM25 grid (`DHM25_MM_ASCII_GRID.zip`, 25 m) into a 50 m gri
 The last argument is the downsampling factor (2 → 50 m, 4 → 100 m). Add `--raw` to write plain
 little-endian u16 (`dem.u16`) instead, for experiments.
 
+## Flood model (Rust/WASM)
+
+The height grid, flood, overlay colouring and lake search live in `flood-wasm/`, compiled to
+WebAssembly. The build output in `web/pkg/` is committed, so the site needs no build to serve.
+After changing the Rust code, rebuild (needs `wasm-pack` and the `wasm32-unknown-unknown`
+target):
+
+    flood-wasm/build.sh
+
+Unit tests run natively: `cd flood-wasm && cargo test`. Benchmarks comparing the JS reference
+flood and the WASM module: `cd flood-bench && node bench.js` (native Rust: `cargo run --release`).
+
 ## Run
 
     python3 -m http.server -d web 8000

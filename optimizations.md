@@ -1,6 +1,6 @@
 # Optimizations
 
-Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~1.15 s in JS
+Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~0.85 s in WASM
 (~0.6 s native Rust), memory is ~1 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
 `node bench.js`).
 
@@ -52,11 +52,10 @@ helper and bounds checks weigh more, so memory access isn't the only bottleneck 
 Doesn't reduce compute time but keeps the map responsive during a recompute. Do it if the above
 still feels sluggish.
 
-## Rust/WASM: not worth it for now
+## Rust/WASM: done (flood-wasm/)
 
-With the same linked-list bucket queue, native Rust is only ~1.5× faster than the JS at 50 m
-(2× at 100 m); WASM would land around 1.2–1.4×. The flood is memory-bound (random access into
-35M-cell arrays), which Rust doesn't fix: data layout matters more than language, see the
-Vec-per-bucket change above.
-Costs: a build step, data copies or living in WASM memory, and no threads on GitHub Pages
-(threaded WASM needs COOP/COEP headers). Reconsider after the above, for memory layout tuning.
+The model now lives in Rust/WASM (preferred for the code, even without a big speed gain). At 50 m
+in Node: JS reference flood ~0.9–1.1 s, WASM `compute()` ~0.85 s including overlay colouring and
+lake search, native Rust flood ~0.6 s. The flood is memory-bound (random access into 35M-cell
+arrays), so the layout changes above still matter more than the language. No threads on GitHub
+Pages (threaded WASM needs COOP/COEP headers).
