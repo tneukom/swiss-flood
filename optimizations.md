@@ -1,7 +1,7 @@
 # Optimizations
 
 Status at 50 m (7701 × 4561 = 35M cells, 23.4M inside Switzerland): one flood takes ~1.3 s in JS
-(~0.85 s native Rust), memory is ~1 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
+(~0.6 s native Rust), memory is ~1 GB. Benchmarks: `flood-bench/` (`cargo run --release`,
 `node bench.js`).
 
 ## Recompute only upstream of the dams (biggest win)
@@ -36,6 +36,14 @@ Smaller arrays should also speed up the flood (memory-bound, see below).
 Not worth it: skipping NODATA cells (saves another third, but neighbour lookups need an index
 table: slower and much less readable); storing `level` as an offset from `terrain`.
 
+## Vec per bucket instead of linked lists
+
+The bucket queue in web/flood.js is one FIFO linked list per metre (`head`/`tail` per bucket,
+`next` per cell). Popping a cell reads `next[i]` at a scattered position, an extra cache miss per
+cell. One growable array per bucket reads sequentially instead. In the Rust benchmark this is
+~1.5× faster (850 → 600 ms) at the same memory and with identical results. In JS: one
+`Int32Array` per bucket, doubled by hand when full (~4,600 buckets are actually used).
+
 ## Web Worker
 
 Doesn't reduce compute time but keeps the map responsive during a recompute. Do it if the above
@@ -43,7 +51,9 @@ still feels sluggish.
 
 ## Rust/WASM: not worth it for now
 
-Native Rust is only ~1.5× faster than the JS at 50 m (2× at 100 m); WASM would land around
-1.2–1.4×. The flood is memory-bound (random access into 35M-cell arrays), which Rust doesn't fix.
+With the same linked-list bucket queue, native Rust is only ~1.5× faster than the JS at 50 m
+(2× at 100 m); WASM would land around 1.2–1.4×. The flood is memory-bound (random access into
+35M-cell arrays), which Rust doesn't fix: data layout matters more than language, see the
+Vec-per-bucket change above.
 Costs: a build step, data copies or living in WASM memory, and no threads on GitHub Pages
 (threaded WASM needs COOP/COEP headers). Reconsider after the above, for memory layout tuning.
